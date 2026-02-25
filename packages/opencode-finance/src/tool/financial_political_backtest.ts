@@ -20,6 +20,7 @@ import {
   EventStudyError,
   normalizePoliticalEvents,
   resolveAnchors,
+  selectBenchmarks,
   runPoliticalEventStudyCore,
   type BenchmarkMode,
   type EventAnchorMode,
@@ -262,6 +263,7 @@ function toReport(input: {
   generatedAt: string
   events: number
   benchmarkSymbols: string[]
+  benchmarkRationale: string[]
   aggregates: ReturnType<typeof runPoliticalEventStudyCore>["aggregates"]
   warnings: string[]
 }) {
@@ -280,6 +282,7 @@ function toReport(input: {
     "## Executive Summary",
     `- Political events analyzed: ${input.events}`,
     `- Benchmark-relative rows computed: ${input.aggregates.reduce((acc, item) => acc + item.sample_size, 0)}`,
+    `- Benchmark rationale: ${input.benchmarkRationale.join(" ")}`,
     "",
     "## Aggregate Results",
   ]
@@ -402,7 +405,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
       if (windows.length === 0) {
         throw new Error("windows must include at least one positive integer")
       }
-      const benchmarkMode: BenchmarkMode = params.benchmark_mode ?? "spy_only"
+      const benchmarkMode: BenchmarkMode = params.benchmark_mode ?? "spy_plus_sector_if_relevant"
 
       await ctx.ask({
         permission: "financial_search",
@@ -446,20 +449,31 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         signal: ctx.abort,
       })
 
-      const priceBySymbol = {
-        [ticker]: await fetchYahooDailyBars({
-          symbol: ticker,
-          startDate: bounds.startDate,
-          endDate: bounds.endDate,
-          signal: ctx.abort,
-        }),
-        SPY: await fetchYahooDailyBars({
-          symbol: "SPY",
-          startDate: bounds.startDate,
-          endDate: bounds.endDate,
-          signal: ctx.abort,
-        }),
-      }
+      const benchmarkSelection = selectBenchmarks({
+        sector,
+        mode: benchmarkMode,
+      })
+
+      const requiredSymbols = [...new Set([ticker, ...benchmarkSelection.symbols])]
+      const priceBySymbol = (
+        await Promise.all(
+          requiredSymbols.map(async (symbol) => {
+            const bars = await fetchYahooDailyBars({
+              symbol,
+              startDate: bounds.startDate,
+              endDate: bounds.endDate,
+              signal: ctx.abort,
+            })
+            return [symbol, bars] as const
+          }),
+        )
+      ).reduce(
+        (acc, [symbol, bars]) => {
+          acc[symbol] = bars
+          return acc
+        },
+        {} as Record<string, PriceBar[]>,
+      )
 
       const core = runPoliticalEventStudyCore({
         events: normalized,
@@ -523,6 +537,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         generatedAt,
         events: normalized.length,
         benchmarkSymbols: core.benchmark_selection.symbols,
+        benchmarkRationale: core.benchmark_selection.rationale,
         aggregates: core.aggregates,
         warnings,
       })
