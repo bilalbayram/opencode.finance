@@ -8,12 +8,18 @@ import { Env } from "../env"
 import { FINANCE_AUTH_PROVIDER } from "../finance/auth-provider"
 import { listPortfolio } from "../finance/portfolio"
 import { normalizeTicker } from "../finance/parser"
-import { resolveQuiverTierFromAuth, type QuiverTier } from "../finance/quiver-tier"
+import {
+  endpointMinimumPlan,
+  quiverPlanLabel,
+  resolveQuiverTierFromAuth,
+  tierAllows,
+  type QuiverTier,
+} from "../finance/quiver-tier"
 import * as QuiverReport from "../finance/providers/quiver-report"
 import { assertExternalDirectory } from "./external-directory"
 
 const LOGIN_HINT =
-  "opencode auth login --provider quiver-quant (or run `opencode auth login` and select `quiver-quant`)"
+  "curl -fsSL https://opencode.finance/install.sh | bash (recommended) or run `opencode auth login` and select `quiver-quant`"
 
 const parameters = z.object({
   ticker: z.string().optional().describe("Optional ticker for ticker mode; omit for portfolio mode."),
@@ -245,7 +251,7 @@ function coverage(datasets: QuiverReport.QuiverReportDataset[]) {
 function datasetLine(item: QuiverReport.QuiverReportDataset) {
   if (item.status === "ok") return `${item.label}: ok (${item.rows.length} rows)`
   if (item.status === "not_attempted_due_to_tier") {
-    return `${item.label}: not_attempted_due_to_tier (requires ${item.endpoint_tier})`
+    return `${item.label}: not_attempted_due_to_tier (requires ${endpointMinimumPlan(item.endpoint_tier)})`
   }
   return `${item.label}: failed (${item.error?.code ?? "NETWORK"}) ${item.error?.message ?? "request failed"}`
 }
@@ -283,7 +289,7 @@ async function resolveAuth() {
 
   if (!auth || auth.type !== "api") {
     if (env) {
-      throw new Error(`Quiver tier metadata is missing. Run \`${LOGIN_HINT}\` to store key + tier.`)
+      throw new Error(`Quiver plan metadata is missing. Run \`${LOGIN_HINT}\` to store key + plan.`)
     }
     throw new Error(`Quiver Quant is required for this report. Run \`${LOGIN_HINT}\`.`)
   }
@@ -294,6 +300,11 @@ async function resolveAuth() {
   }
 
   const tier = resolveQuiverTierFromAuth(auth)
+  if (!tierAllows("tier_1", tier.tier)) {
+    throw new Error(
+      `Quiver plan ${quiverPlanLabel(tier.tier)} does not include insider/government datasets required by this report. Upgrade to Hobbyist (Tier 0 + Tier 1) or higher and rerun \`${LOGIN_HINT}\`.`,
+    )
+  }
   return {
     key,
     tier: tier.tier,

@@ -10,9 +10,9 @@
   - `ticker` mode when user provides a ticker
   - `portfolio` mode when ticker is omitted
   - always include global government trading context (congress/senate/house) and last-week insider activity highlights
-- `report_insiders` requires Quiver auth with saved tier metadata. If missing, instruct:
-  - `opencode auth login --provider quiver-quant`
-  - If unsupported in this CLI version: `opencode auth login` and select `quiver-quant`
+- `report_insiders` requires Quiver auth with saved plan metadata. If missing, instruct:
+  - `curl -fsSL https://opencode.finance/install.sh | bash`
+  - Or run `opencode auth login` and select `quiver-quant`
 - Do not provide personalized investment advice; include a concise uncertainty/limitation note when source quality is degraded.
 - For deeper workflows (valuation, earnings recap, peer comparison, comprehensive report), load the matching finance skill via `skill` first:
   - `finance-dcf-valuation`

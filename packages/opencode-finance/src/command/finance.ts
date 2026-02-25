@@ -52,11 +52,11 @@ export const FINANCE_SLASH_COMMANDS: FinanceSlashCommand[] = [
   },
   {
     name: "report-insiders",
-    description: "Generate Quiver tier-aware insider/government-trading insights",
+    description: "Generate Quiver plan-aware insider/government-trading insights",
     hints: ["$1"],
     aliases: ["insiders-report"],
     template:
-      'Generate a tier-aware insider report using Quiver Quant.\n\nExecution rules:\n1) If "$1" exists, call `report_insiders` with `{ ticker: "$1", limit: 50 }`.\n2) If "$1" is missing, call `report_insiders` with `{ limit: 50 }` for portfolio mode.\n3) Then provide a concise in-chat executive summary with:\n   - mode (`ticker` or `portfolio`)\n   - Quiver tier used\n   - coverage/degradation notes including `not_attempted_due_to_tier`\n   - last 7-day insider/government activity highlights\n   - global government-trading summary (congress/senate/house)\n4) Point directly to artifact files from the tool output:\n   - `insiders-report.md`\n   - `insiders-data.json`\n\nIf tool output reports missing Quiver setup, show:\n`opencode auth login --provider quiver-quant`\nIf your CLI does not support `--provider`, run `opencode auth login` and select `quiver-quant`.\n\nDo not provide investment advice.',
+      'Generate a tier-aware insider report using Quiver Quant.\n\nExecution rules:\n1) If "$1" exists, call `report_insiders` with `{ ticker: "$1", limit: 50 }`.\n2) If "$1" is missing, call `report_insiders` with `{ limit: 50 }` for portfolio mode.\n3) Then provide a concise in-chat executive summary with:\n   - mode (`ticker` or `portfolio`)\n   - Quiver plan used (`Public`, `Hobbyist`, `Trader`, or `Enterprise`)\n   - coverage/degradation notes including `not_attempted_due_to_tier`\n   - last 7-day insider/government activity highlights\n   - global government-trading summary (congress/senate/house)\n4) Point directly to artifact files from the tool output:\n   - `insiders-report.md`\n   - `insiders-data.json`\n\nIf tool output reports missing Quiver setup, show:\n`curl -fsSL https://opencode.finance/install.sh | bash`\n\nDo not provide investment advice.',
   },
   {
     name: "market",

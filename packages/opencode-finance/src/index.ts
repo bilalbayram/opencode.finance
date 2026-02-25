@@ -28,7 +28,7 @@ const REPORT_SKILL = "finance-comprehensive-report"
 const REPORT_SKILL_GIST_ENV = "FINANCE_REPORT_SKILL_GIST_URL"
 const BUNDLED_SKILL = path.resolve(import.meta.dir, "./skill/finance-comprehensive-report.SKILL.md")
 const login = (id: string) =>
-  `\`opencode auth login --provider ${id}\` (or run \`opencode auth login\` then select \`${id}\`)`
+  `\`curl -fsSL https://opencode.finance/install.sh | bash\` (recommended) or run \`opencode auth login\` and select \`${id}\``
 
 const ONBOARD_TEMPLATE = [
   "Run finance plugin onboarding for report workflows.",
@@ -316,10 +316,10 @@ export const QuiverQuantAuthPlugin = authPlugin({
       key: "tier",
       message: "Select your Quiver Quant plan tier",
       options: [
-        { label: "Tier 1", value: "tier_1" },
-        { label: "Tier 2", value: "tier_2" },
-        { label: "Tier 3", value: "tier_3" },
-        { label: "Enterprise", value: "enterprise" },
+        { label: "Public (Tier 0)", value: "tier_1" },
+        { label: "Hobbyist (Tier 0 + Tier 1)", value: "tier_2" },
+        { label: "Trader (Tier 0 + Tier 1 + Tier 2)", value: "tier_3" },
+        { label: "Enterprise (Tier 0 + Tier 1 + Tier 2)", value: "enterprise" },
       ],
     },
   ],

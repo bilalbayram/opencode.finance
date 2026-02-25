@@ -1,4 +1,4 @@
-Generate a Quiver Quant insider/government-trading report with strict tier gating.
+Generate a Quiver Quant insider/government-trading report with strict plan/tier gating.
 
 Modes:
 - ticker mode: provide `ticker`
@@ -6,7 +6,7 @@ Modes:
 
 Behavior:
 - Quiver Quant auth is required
-- Uses saved Quiver tier from auth metadata for endpoint gating
+- Uses saved Quiver plan metadata for endpoint gating
 - Never calls datasets above the user's tier
 - Always includes a global government-trading section (congress/senate/house)
 - Also generates a recent 7-day insider/government activity section such as "this week Senator X bought..."

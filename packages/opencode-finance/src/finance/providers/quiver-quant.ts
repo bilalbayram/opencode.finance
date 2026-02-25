@@ -8,7 +8,7 @@ import type {
   FinanceProviderData,
   NormalizedFinanceQuery,
 } from "../types"
-import { normalizeQuiverTier, tierAllows, type QuiverTier } from "../quiver-tier"
+import { normalizeQuiverTier, quiverPlanLabel, tierAllows, type QuiverTier } from "../quiver-tier"
 import { fetchInsiders, fetchTickerAlt, fetchTickerGovTrading, type QuiverReportDataset } from "./quiver-report"
 
 const DEFAULT_TIMEOUT_MS = 12_000
@@ -174,6 +174,24 @@ async function fallbackTierOneSummary(input: {
   timeoutMs: number
   signal?: AbortSignal
 }): Promise<FinanceDataEnvelope<FinanceProviderData>> {
+  if (!tierAllows("tier_1", input.tier)) {
+    return {
+      source: input.source,
+      timestamp: new Date().toISOString(),
+      attribution: [],
+      data: {
+        symbol: input.ticker.toUpperCase(),
+        ownershipChange: 0,
+        entries: [],
+        summary: {
+          source: input.source,
+          text: `Quiver ${quiverPlanLabel(input.tier)} does not include Tier 1 government-trading datasets. Upgrade to Hobbyist (Tier 0 + Tier 1) or higher for insider workflow coverage.`,
+        },
+      },
+      errors: [],
+    }
+  }
+
   const [gov, alt] = await Promise.all([
     fetchTickerGovTrading({
       apiKey: input.apiKey,
@@ -199,8 +217,8 @@ async function fallbackTierOneSummary(input: {
   const matched = ok.filter((item) => item.rows.length > 0).map((item) => `${item.label}: ${item.rows.length}`)
   const text =
     total > 0
-      ? `Quiver ${input.tier} does not include live Form 4 insider feed. Government-trading proxies for ${input.ticker} show ${total} matched records (${matched.join(", ")}).`
-      : `Quiver ${input.tier} does not include live Form 4 insider feed. No recent government-trading proxy records were found for ${input.ticker}.`
+      ? `Quiver ${quiverPlanLabel(input.tier)} does not include live Form 4 insider feed. Government-trading proxies for ${input.ticker} show ${total} matched records (${matched.join(", ")}).`
+      : `Quiver ${quiverPlanLabel(input.tier)} does not include live Form 4 insider feed. No recent government-trading proxy records were found for ${input.ticker}.`
 
   return {
     source: input.source,
