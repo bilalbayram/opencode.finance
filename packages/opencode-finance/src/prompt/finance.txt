@@ -10,6 +10,10 @@
   - `ticker` mode when user provides a ticker
   - `portfolio` mode when ticker is omitted
   - always include global government trading context (congress/senate/house) and last-week insider activity highlights
+- Use `financial_political_backtest` for event-study backtests around political-trading disclosures:
+  - strict-fail when required event/price inputs are missing for configured windows
+  - include benchmark-relative context (SPY baseline and sector ETF when relevant)
+  - point users to generated `report.md`, `dashboard.md`, `assumptions.json`, and raw tables under `reports/`
 - `report_insiders` requires Quiver auth with saved plan metadata. If missing, instruct:
   - `curl -fsSL https://opencode.finance/install.sh | bash`
   - Or run `opencode auth login` and select `quiver-quant`

@@ -11,6 +11,7 @@ import { PortfolioReportTool } from "./tool/portfolio_report"
 import { ReportInsidersTool } from "./tool/report_insiders"
 import { ReportGovernmentTradingTool } from "./tool/report_government_trading"
 import { ReportDarkpoolAnomalyTool } from "./tool/report_darkpool_anomaly"
+import { FinancialPoliticalBacktestTool } from "./tool/financial_political_backtest"
 import { ReportPdfTool } from "./tool/report_pdf"
 import { Env } from "./env"
 import PROMPT_FINANCE from "./prompt/finance.txt"
@@ -117,6 +118,7 @@ async function buildTools() {
     ReportInsidersTool,
     ReportGovernmentTradingTool,
     ReportDarkpoolAnomalyTool,
+    FinancialPoliticalBacktestTool,
     ReportPdfTool,
   ]
   const out: Hooks["tool"] = {}

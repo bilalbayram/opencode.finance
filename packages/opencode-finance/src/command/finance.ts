@@ -67,6 +67,14 @@ export const FINANCE_SLASH_COMMANDS: FinanceSlashCommand[] = [
       'Generate a strict government-trading report using Quiver Quant required datasets.\n\nExecution rules:\n1) If "$1" exists, call `report_government_trading` with `{ ticker: "$1", limit: 50 }`.\n2) If "$1" is missing, call `report_government_trading` with `{ limit: 50 }` for global mode.\n3) Then provide a concise in-chat summary with:\n   - mode and scope\n   - generated_at, run_id, and baseline_run_id\n   - delta counts (`new_events`, `updated_events`, `unchanged_events`, `no_longer_present_events`)\n   - persistence trend highlights\n   - source attribution timestamps for required datasets\n4) Point directly to artifact files from the tool output:\n   - `report.md`\n   - `dashboard.md`\n   - `assumptions.json`\n   - `normalized-events.json`\n   - `delta-events.json`\n   - `data.json`\n5) After summary, ask exactly one user question with the `question` tool:\n   - header: `PDF Export`\n   - question: `Generate a polished PDF report now?`\n   - options:\n     1) `Yes (Recommended)` - Generate a polished PDF in the same output directory.\n     2) `No` - Skip PDF generation.\n   - custom: `false`\n6) If user selects `Yes (Recommended)`, call `report_pdf` with:\n   - `subcommand`: `government-trading`\n   - `outputRoot`: `<artifacts.output_root>`\n   - `filename`: `government-trading-<run_id>.pdf`\n\nIf tool output reports missing Quiver setup, show:\n`curl -fsSL https://opencode.finance/install.sh | bash`\n\nIf `question` is unavailable in this client context, skip PDF export and complete normally.\n\nDo not provide investment advice.',
   },
   {
+    name: "financial-political-backtest",
+    description: "Backtest price behavior around political-trading events",
+    hints: ["$1", "$2"],
+    aliases: ["political-backtest"],
+    template:
+      'Run a political-trading event backtest.\n\nExecution rules:\n1) If "$1" is missing, explain exact usage: `/financial-political-backtest <ticker> [windows_csv]` and stop.\n2) Parse optional "$2" as comma-separated trading-session windows (for example `1,5,20,60`).\n3) Call `financial_political_backtest` with:\n   - `ticker: "$1"`\n   - `windows`: parsed numeric array from "$2" when provided; omit otherwise.\n4) Then provide a concise in-chat summary with:\n   - ticker\n   - event count and benchmark(s)\n   - aggregate hit rate + median return by window\n   - strict-failure notes if any inputs were missing\n5) Point directly to generated artifacts:\n   - `report.md`\n   - `dashboard.md`\n   - `assumptions.json`\n   - raw result tables\n\nDo not provide investment advice.',
+  },
+  {
     name: "market",
     description: "Summarize current market overview",
     hints: ["$ARGUMENTS"],

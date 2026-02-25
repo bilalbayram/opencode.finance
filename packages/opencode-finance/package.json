@@ -12,7 +12,8 @@
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "build": "tsc",
-    "migrate": "bun src/migrate.ts"
+    "migrate": "bun src/migrate.ts",
+    "test": "bun test ./test"
   },
   "exports": {
     ".": "./src/index.ts"
