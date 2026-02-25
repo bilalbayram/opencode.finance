@@ -66,6 +66,14 @@ export const FINANCE_SLASH_COMMANDS: FinanceSlashCommand[] = [
       "Provide a high-level market summary using available finance sources. If the user passes a specific region or index, tailor the summary. Keep uncertainty explicit when data is missing.",
   },
   {
+    name: "financial-darkpool-anomaly",
+    description: "Detect statistically significant off-exchange (darkpool) anomalies",
+    hints: ["$1"],
+    aliases: ["darkpool-anomaly"],
+    template:
+      'Generate darkpool anomaly analysis with strict statistical criteria.\n\nExecution rules:\n1) If "$1" exists, call `report_darkpool_anomaly` with `{ ticker: "$1" }`.\n2) If "$1" is missing, call `report_darkpool_anomaly` in portfolio mode with `{}`.\n3) Then provide a concise in-chat summary with:\n   - mode (`ticker` or `portfolio`)\n   - Quiver plan used\n   - anomaly counts by transition (`new`, `persisted`, `severity_change`, `resolved`)\n   - top anomalies with severity, direction, and z-score\n4) Point directly to artifact files from tool output:\n   - `report.md`\n   - `dashboard.md`\n   - `assumptions.json`\n   - `evidence.json`\n   - `evidence.md`\n\nAfter markdown artifacts are written, ask exactly one user question with the `question` tool:\n- header: `PDF Export`\n- question: `Generate a polished PDF report now?`\n- options:\n  1) `Yes (Recommended)` - Generate a polished PDF in the report directory.\n  2) `No` - Skip PDF generation.\n- custom: `false`\n\nIf user selects `Yes (Recommended)`, call `report_pdf` with:\n- `outputRoot`: darkpool artifact `output_root` from `report_darkpool_anomaly`\n- `filename`: `<ticker-or-portfolio>-<YYYY-MM-DD>-darkpool-anomaly.pdf`\n\nIf `question` is unavailable in this client context, skip PDF export and complete analysis normally.\n\nDo not provide investment advice.',
+  },
+  {
     name: "report",
     description: "Generate a comprehensive public-company financial report",
     hints: ["$1", "$2"],

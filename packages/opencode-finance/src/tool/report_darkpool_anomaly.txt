@@ -1,0 +1,16 @@
+Detect statistically significant darkpool/off-exchange anomalies from Quiver Tier 1 data.
+
+Runs in ticker mode when `ticker` is provided, otherwise portfolio mode using stored holdings.
+
+Outputs deterministic artifacts under `reports/`:
+- `report.md`
+- `dashboard.md`
+- `assumptions.json`
+- `evidence.json`
+- `evidence.md`
+
+Strict failure semantics:
+- missing quiver auth/tier
+- required off-exchange dataset failure
+- insufficient sample/baseline support for significance testing
+- artifact write failures
