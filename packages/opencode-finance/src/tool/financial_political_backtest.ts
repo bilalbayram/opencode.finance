@@ -17,11 +17,15 @@ import {
 import * as QuiverReport from "../finance/providers/quiver-report"
 import { assertExternalDirectory } from "./external-directory"
 import {
+  compareRuns,
+  discoverHistoricalRuns,
   EventStudyError,
   normalizePoliticalEvents,
   resolveAnchors,
   selectBenchmarks,
   runPoliticalEventStudyCore,
+  type BacktestRunComparison,
+  type BacktestRunSnapshot,
   type BenchmarkMode,
   type EventAnchorMode,
   type NonTradingAlignment,
@@ -74,6 +78,7 @@ type BacktestArtifactPaths = {
   windowReturnsPath: string
   benchmarkReturnsPath: string
   aggregatePath: string
+  comparisonPath: string
 }
 
 function projectRoot(context: Pick<Tool.Context, "directory" | "worktree">) {
@@ -265,6 +270,7 @@ function toReport(input: {
   benchmarkSymbols: string[]
   benchmarkRationale: string[]
   aggregates: ReturnType<typeof runPoliticalEventStudyCore>["aggregates"]
+  comparison: BacktestRunComparison
   warnings: string[]
 }) {
   const lines = [
@@ -293,6 +299,28 @@ function toReport(input: {
     )
   }
 
+  lines.push("", "## Longitudinal Comparison")
+  if (input.comparison.first_run) {
+    lines.push("- No prior backtest run was discovered. This run initializes historical tracking.")
+  } else {
+    lines.push(
+      `- Baseline run: ${input.comparison.baseline?.generated_at ?? "unknown"} (${input.comparison.baseline?.output_root ?? "unknown"})`,
+    )
+    lines.push(
+      `- Event sample: current ${input.comparison.event_sample.current}, baseline ${input.comparison.event_sample.baseline}, new ${input.comparison.event_sample.new_events.length}, removed ${input.comparison.event_sample.removed_events.length}.`,
+    )
+    if (input.comparison.conclusion_changes.length === 0) {
+      lines.push("- Benchmark-relative directional conclusions did not change versus baseline.")
+    } else {
+      lines.push("- Benchmark-relative conclusion changes:")
+      input.comparison.conclusion_changes.forEach((item) =>
+        lines.push(
+          `  - ${item.anchor_kind} ${item.window_sessions}D vs ${item.benchmark_symbol}: ${item.baseline_view} -> ${item.current_view}`,
+        ),
+      )
+    }
+  }
+
   if (input.warnings.length > 0) {
     lines.push("", "## Warnings")
     input.warnings.forEach((warning) => lines.push(`- ${warning}`))
@@ -307,6 +335,7 @@ function toDashboard(input: {
   events: number
   benchmarks: string[]
   aggregates: ReturnType<typeof runPoliticalEventStudyCore>["aggregates"]
+  comparison: BacktestRunComparison
 }) {
   const lines = [
     `# Political Backtest Dashboard: ${input.ticker}`,
@@ -324,8 +353,36 @@ function toDashboard(input: {
     )
   }
 
+  lines.push("", "## Longitudinal Snapshot")
+  if (input.comparison.first_run) {
+    lines.push("- Baseline: none (first run)")
+  } else {
+    lines.push(`- Baseline generated at: ${input.comparison.baseline?.generated_at ?? "unknown"}`)
+    lines.push(`- New events: ${input.comparison.event_sample.new_events.length}`)
+    lines.push(`- Removed events: ${input.comparison.event_sample.removed_events.length}`)
+    lines.push(`- Conclusion changes: ${input.comparison.conclusion_changes.length}`)
+  }
+
   lines.push("", "Analytic output only. No investment advice.")
   return `${lines.join("\n")}\n`
+}
+
+function stampForPath() {
+  return new Date().toISOString().replace(/[:.]/g, "-")
+}
+
+async function archiveExistingArtifacts(outputRoot: string, paths: string[]) {
+  const existing = []
+  for (const filepath of paths) {
+    if (await Bun.file(filepath).exists()) {
+      existing.push(filepath)
+    }
+  }
+  if (existing.length === 0) return
+
+  const historyRoot = path.join(outputRoot, "history", stampForPath())
+  await fs.mkdir(historyRoot, { recursive: true })
+  await Promise.all(existing.map((filepath) => fs.rename(filepath, path.join(historyRoot, path.basename(filepath)))))
 }
 
 async function writeArtifacts(input: {
@@ -338,6 +395,7 @@ async function writeArtifacts(input: {
   windowReturns: string
   benchmarkReturns: string
   aggregate: string
+  comparison: string
 }): Promise<BacktestArtifactPaths> {
   await assertExternalDirectory(input.ctx, input.outputRoot, { kind: "directory" })
   await fs.mkdir(input.outputRoot, { recursive: true })
@@ -350,6 +408,18 @@ async function writeArtifacts(input: {
   const windowReturnsPath = path.join(input.outputRoot, "event-window-returns.json")
   const benchmarkReturnsPath = path.join(input.outputRoot, "benchmark-relative-returns.json")
   const aggregatePath = path.join(input.outputRoot, "aggregate-results.json")
+  const comparisonPath = path.join(input.outputRoot, "comparison.json")
+
+  await archiveExistingArtifacts(input.outputRoot, [
+    reportPath,
+    dashboardPath,
+    assumptionsPath,
+    eventsPath,
+    windowReturnsPath,
+    benchmarkReturnsPath,
+    aggregatePath,
+    comparisonPath,
+  ])
 
   await input.ctx.ask({
     permission: "edit",
@@ -361,6 +431,8 @@ async function writeArtifacts(input: {
       windowReturnsPath,
       benchmarkReturnsPath,
       aggregatePath,
+      comparisonPath,
+      path.join(input.outputRoot, "history", "*"),
     ].map((item) => path.relative(worktree, item)),
     always: ["*"],
     metadata: {
@@ -376,6 +448,7 @@ async function writeArtifacts(input: {
     Bun.write(windowReturnsPath, input.windowReturns),
     Bun.write(benchmarkReturnsPath, input.benchmarkReturns),
     Bun.write(aggregatePath, input.aggregate),
+    Bun.write(comparisonPath, input.comparison),
   ])
 
   return {
@@ -386,6 +459,7 @@ async function writeArtifacts(input: {
     windowReturnsPath,
     benchmarkReturnsPath,
     aggregatePath,
+    comparisonPath,
   }
 }
 
@@ -492,12 +566,30 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         : defaultOutputRoot(ctx, ticker)
 
       const generatedAt = new Date().toISOString()
+      const currentSnapshot: BacktestRunSnapshot = {
+        workflow: "financial_political_backtest",
+        output_root: outputRoot,
+        generated_at: generatedAt,
+        aggregates: core.aggregates,
+        event_ids: [...new Set(normalized.map((item) => item.event_id))].sort((a, b) => a.localeCompare(b)),
+      }
+      const priorRuns = await discoverHistoricalRuns({
+        reports_root: projectRoot(ctx),
+        ticker,
+        exclude_output_root: outputRoot,
+      })
+      const comparison = compareRuns({
+        current: currentSnapshot,
+        baseline: priorRuns.at(-1) ?? null,
+      })
+
       const warnings = [
         ...(auth.warning ? [auth.warning] : []),
         ...(auth.inferred ? ["Quiver plan tier was inferred from fallback metadata."] : []),
       ]
 
       const assumptions = {
+        workflow: "financial_political_backtest",
         generated_at: generatedAt,
         mode: "ticker",
         ticker,
@@ -523,6 +615,12 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
           end_date: bounds.endDate,
           symbols: Object.keys(priceBySymbol),
         },
+        historical_comparison: {
+          first_run: comparison.first_run,
+          baseline: comparison.baseline,
+          event_sample: comparison.event_sample,
+          conclusion_changes: comparison.conclusion_changes,
+        },
         policy: {
           strict_failure: true,
           non_advisory: true,
@@ -539,6 +637,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         benchmarkSymbols: core.benchmark_selection.symbols,
         benchmarkRationale: core.benchmark_selection.rationale,
         aggregates: core.aggregates,
+        comparison,
         warnings,
       })
 
@@ -547,6 +646,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         events: normalized.length,
         benchmarks: core.benchmark_selection.symbols,
         aggregates: core.aggregates,
+        comparison,
       })
 
       const files = await writeArtifacts({
@@ -559,6 +659,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         windowReturns: JSON.stringify(core.event_window_returns, null, 2),
         benchmarkReturns: JSON.stringify(core.benchmark_relative_returns, null, 2),
         aggregate: JSON.stringify(core.aggregates, null, 2),
+        comparison: JSON.stringify(comparison, null, 2),
       })
 
       const metadata: BacktestMetadata = {
@@ -572,7 +673,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         report_path: files.reportPath,
         dashboard_path: files.dashboardPath,
         assumptions_path: files.assumptionsPath,
-        raw_paths: [files.eventsPath, files.windowReturnsPath, files.benchmarkReturnsPath, files.aggregatePath],
+        raw_paths: [files.eventsPath, files.windowReturnsPath, files.benchmarkReturnsPath, files.aggregatePath, files.comparisonPath],
         events: normalized.length,
       }
 
@@ -596,6 +697,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
                 event_window_returns: files.windowReturnsPath,
                 benchmark_relative_returns: files.benchmarkReturnsPath,
                 aggregate: files.aggregatePath,
+                comparison: files.comparisonPath,
               },
             },
           },

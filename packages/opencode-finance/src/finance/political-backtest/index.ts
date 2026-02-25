@@ -16,3 +16,5 @@ export { normalizeQuiverRow, normalizeQuiverRows } from "./normalize-quiver-even
 export { alignToNextSession, createTradingCalendar, getSessionByOffset } from "./trading-calendar"
 export { computeForwardReturns, createCloseMap, normalizeWindowList } from "./forward-returns"
 export { aggregateForwardReturnSets, computeAggregateStats } from "./aggregate-stats"
+
+export { discoverHistoricalRuns, compareRuns, type BacktestRunSnapshot, type BacktestRunComparison } from "./history"
