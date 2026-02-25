@@ -32,6 +32,7 @@ export type QuiverReportInput = {
   limit?: number
   timeoutMs?: number
   signal?: AbortSignal
+  enforceTierGate?: boolean
 }
 
 type Endpoint = {
@@ -90,18 +91,33 @@ const TICKER_ALT: Endpoint[] = [
     label: "Ticker Lobbying",
     endpoint: "/beta/historical/lobbying/{ticker}",
     tier: "tier_1",
+    query: (input) => ({
+      limit: clampHistoricalLimit(input.limit),
+      page_size: clampHistoricalLimit(input.limit),
+      page: 1,
+    }),
   },
   {
     id: "ticker_gov_contracts",
     label: "Ticker Government Contracts",
     endpoint: "/beta/historical/govcontractsall/{ticker}",
     tier: "tier_1",
+    query: (input) => ({
+      limit: clampHistoricalLimit(input.limit),
+      page_size: clampHistoricalLimit(input.limit),
+      page: 1,
+    }),
   },
   {
     id: "ticker_off_exchange",
     label: "Ticker Off-Exchange Activity",
     endpoint: "/beta/historical/offexchange/{ticker}",
     tier: "tier_1",
+    query: (input) => ({
+      limit: clampHistoricalLimit(input.limit),
+      page_size: clampHistoricalLimit(input.limit),
+      page: 1,
+    }),
   },
 ]
 
@@ -122,6 +138,14 @@ function clampLimit(input?: number) {
   const value = Math.floor(input ?? 50)
   if (value < 1) return 1
   if (value > 100) return 100
+  return value
+}
+
+function clampHistoricalLimit(input?: number) {
+  if (!Number.isFinite(input)) return 200
+  const value = Math.floor(input ?? 200)
+  if (value < 1) return 1
+  if (value > 500) return 500
   return value
 }
 
@@ -186,7 +210,7 @@ function normalizeThrownError(error: unknown, timeoutMs: number): QuiverReportEr
 async function fetchDataset(def: Endpoint, input: QuiverReportInput): Promise<QuiverReportDataset> {
   const timestamp = new Date().toISOString()
   const source = buildUrl(def.endpoint, input, def.query?.(input)).toString()
-  if (!tierAllows(def.tier, input.tier)) {
+  if (input.enforceTierGate !== false && !tierAllows(def.tier, input.tier)) {
     return {
       id: def.id,
       label: def.label,

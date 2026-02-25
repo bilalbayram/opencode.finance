@@ -13,6 +13,11 @@
 - `report_insiders` requires Quiver auth with saved plan metadata. If missing, instruct:
   - `curl -fsSL https://opencode.finance/install.sh | bash`
   - Or run `opencode auth login` and select `quiver-quant`
+- Use `report_darkpool_anomaly` for statistically significant off-exchange anomaly analysis:
+  - `ticker` mode when user provides a ticker
+  - `portfolio` mode when ticker is omitted
+  - require strict significance and baseline sample prerequisites
+  - include transition classes (`new`, `persisted`, `severity_change`, `resolved`) from prior run artifacts
 - Do not provide personalized investment advice; include a concise uncertainty/limitation note when source quality is degraded.
 - For deeper workflows (valuation, earnings recap, peer comparison, comprehensive report), load the matching finance skill via `skill` first:
   - `finance-dcf-valuation`

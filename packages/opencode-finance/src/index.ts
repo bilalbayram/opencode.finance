@@ -9,6 +9,7 @@ import { FinancialSearchTool } from "./tool/financial_search"
 import { PortfolioTool } from "./tool/portfolio"
 import { PortfolioReportTool } from "./tool/portfolio_report"
 import { ReportInsidersTool } from "./tool/report_insiders"
+import { ReportDarkpoolAnomalyTool } from "./tool/report_darkpool_anomaly"
 import { ReportPdfTool } from "./tool/report_pdf"
 import { Env } from "./env"
 import PROMPT_FINANCE from "./prompt/finance.txt"
@@ -108,7 +109,14 @@ async function ensureSkill(context: { directory: string; worktree: string }) {
 }
 
 async function buildTools() {
-  const list = [FinancialSearchTool, PortfolioTool, PortfolioReportTool, ReportInsidersTool, ReportPdfTool]
+  const list = [
+    FinancialSearchTool,
+    PortfolioTool,
+    PortfolioReportTool,
+    ReportInsidersTool,
+    ReportDarkpoolAnomalyTool,
+    ReportPdfTool,
+  ]
   const out: Hooks["tool"] = {}
   for (const item of list) {
     const init = await item.init()
@@ -263,7 +271,7 @@ export const OpenCodeFinancePlugin: Plugin = async (input) => {
           "- Use `financial_search` with `coverage: \"comprehensive\"` for numeric claims.",
           "- If a numeric field cannot be sourced, set the value to `unknown` (never `N/A`).",
           `- If Quiver setup is missing, instruct: ${login("quiver-quant")}.`,
-          "- After markdown artifacts, ask one PDF export question; if accepted, call `report_pdf`.",
+          "- After markdown artifacts, ask one PDF export question; if accepted, call `report_pdf` with `subcommand: \"report\"`.",
         ].join("\n"),
       } as any)
     },

@@ -14,6 +14,9 @@ const TOP = PAGE_HEIGHT - HEADER_HEIGHT - 30
 const BOTTOM = 56
 const FOOTER_TEXT = "opencode.finance"
 const FOOTER_URL = "https://opencode.finance"
+const PDF_SUBCOMMAND = ["report", "darkpool-anomaly"] as const
+const PDF_SUBCOMMAND_SET = new Set<string>(PDF_SUBCOMMAND)
+const PDF_SUBCOMMAND_LABEL = PDF_SUBCOMMAND.join(", ")
 
 const THEME = {
   paper: hex("#F6F8FB"),
@@ -36,13 +39,17 @@ const THEME = {
   monoBg: hex("#EEF3F8"),
 }
 
+const subcommandSchema = z.string(`subcommand is required. Use one of: ${PDF_SUBCOMMAND_LABEL}`)
+
 const parameters = z.object({
+  subcommand: subcommandSchema.describe("Workflow profile for quality gates and artifact requirements."),
   outputRoot: z.string().describe("Report directory path, usually reports/<TICKER>/<YYYY-MM-DD>/"),
   filename: z.string().optional().describe("Optional PDF filename. Defaults to <TICKER>-<DATE>.pdf inside outputRoot."),
 })
 
 type Font = Awaited<ReturnType<PDFDocument["embedFont"]>>
 type Image = Awaited<ReturnType<PDFDocument["embedPng"]>>
+type PdfSubcommand = (typeof PDF_SUBCOMMAND)[number]
 
 type FontSet = {
   regular: Font
@@ -81,6 +88,63 @@ type SectionStyle = {
   line?: number
 }
 
+type RootHints = {
+  ticker: string
+  date: string
+}
+
+type LoadedArtifacts = {
+  report: string
+  dashboard?: string
+  assumptions?: string
+  evidenceMarkdown?: string
+  evidenceJson?: string
+}
+
+type PdfSection = {
+  title: string
+  content: string
+  style?: SectionStyle
+}
+
+type PdfProfile = {
+  buildCoverData: (input: { artifacts: LoadedArtifacts; hints: RootHints }) => Cover
+  enrichCover: (input: { info: Cover; ctx: Tool.Context }) => Promise<Cover>
+  renderCover: (input: {
+    pdf: PDFDocument
+    info: Cover
+    font: FontSet
+    icon?: Image
+    artifacts: LoadedArtifacts
+  }) => void
+  sectionPlan: (artifacts: LoadedArtifacts) => PdfSection[]
+  qualityGate: (input: { info: Cover; artifacts: LoadedArtifacts }) => string[]
+}
+
+type DarkpoolTransitionCounts = {
+  new: number
+  persisted: number
+  severity_change: number
+  resolved: number
+}
+
+type DarkpoolTopAnomaly = {
+  ticker: string
+  severity: string
+  direction: string
+  absZ: number
+  state: string
+}
+
+type DarkpoolCoverData = {
+  threshold: number
+  lookbackDays: number
+  minSamples: number
+  transitions: DarkpoolTransitionCounts
+  significantCount: number
+  topAnomalies: DarkpoolTopAnomaly[]
+}
+
 type Row =
   | {
       kind: "blank"
@@ -113,6 +177,8 @@ export const ReportPdfTool = Tool.define("report_pdf", {
   description: DESCRIPTION,
   parameters,
   async execute(params, ctx) {
+    const subcommand = parsePdfSubcommand(params.subcommand)
+    const profile = getPdfProfile(subcommand)
     const root = path.isAbsolute(params.outputRoot)
       ? path.normalize(params.outputRoot)
       : path.resolve(ctx.directory, params.outputRoot)
@@ -120,26 +186,31 @@ export const ReportPdfTool = Tool.define("report_pdf", {
 
     await assertExternalDirectory(ctx, root, { kind: "directory" })
 
-    const report = path.join(root, "report.md")
-    const dashboard = path.join(root, "dashboard.md")
-    const assumptions = path.join(root, "assumptions.json")
-
     await ctx.ask({
       permission: "read",
-      patterns: [report, dashboard, assumptions],
+      patterns: artifactReadPatterns(root, subcommand),
       always: ["*"],
       metadata: {
         outputRoot: root,
+        subcommand,
       },
     })
 
-    const reportText = await readRequired(report)
-    const dashboardText = await readOptional(dashboard)
-    const assumptionsText = await readOptional(assumptions)
+    const artifacts = await loadArtifacts(root, subcommand)
+    const hints = defaultRootHints(root, subcommand)
 
-    let info = coverData(reportText, dashboardText, root)
-    info = await enrichCover(info, ctx)
-    const quality = qualityIssues(info, reportText, dashboardText, assumptionsText)
+    let info = profile.buildCoverData({
+      artifacts,
+      hints,
+    })
+    info = await profile.enrichCover({
+      info,
+      ctx,
+    })
+    const quality = profile.qualityGate({
+      info,
+      artifacts,
+    })
     if (quality.length) {
       throw new Error(
         ["PDF export blocked by institutional quality gate:", ...quality.map((item) => `- ${item}`)].join("\n"),
@@ -168,10 +239,16 @@ export const ReportPdfTool = Tool.define("report_pdf", {
     }
     const icon = await embedIcon(pdf, info.icon)
 
-    cover(pdf, info, font, icon)
-    section(pdf, font, info, "Full Report", reportText)
-    section(pdf, font, info, "Dashboard", textOrUnknown(dashboardText, "dashboard.md"))
-    section(pdf, font, info, "Assumptions", assumptionsMarkdown(assumptionsText))
+    profile.renderCover({
+      pdf,
+      info,
+      font,
+      icon,
+      artifacts,
+    })
+    for (const item of profile.sectionPlan(artifacts)) {
+      section(pdf, font, info, item.title, item.content, item.style)
+    }
 
     const pages = pdf.getPages()
     pages.forEach((page, index) => {
@@ -207,18 +284,148 @@ async function readRequired(filepath: string) {
   throw new Error(`Missing required report artifact: ${filepath}`)
 }
 
-function coverData(report: string, dashboard: string | undefined, root: string): Cover {
+function parsePdfSubcommand(input: unknown): PdfSubcommand {
+  if (input === undefined || input === null) {
+    throw new Error(`subcommand is required. Use one of: ${PDF_SUBCOMMAND_LABEL}`)
+  }
+  if (typeof input !== "string" || !input.trim()) {
+    throw new Error(`subcommand is required. Use one of: ${PDF_SUBCOMMAND_LABEL}`)
+  }
+  const value = input.trim()
+  if (!PDF_SUBCOMMAND_SET.has(value)) {
+    throw new Error(`subcommand must be one of: ${PDF_SUBCOMMAND_LABEL}`)
+  }
+  return value as PdfSubcommand
+}
+
+function sectionPlanForSubcommand(subcommand: PdfSubcommand, artifacts: LoadedArtifacts): PdfSection[] {
+  return getPdfProfile(subcommand).sectionPlan(artifacts)
+}
+
+function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
+  if (subcommand === "darkpool-anomaly") {
+    return {
+      buildCoverData: ({ artifacts, hints }) => darkpoolCoverData(artifacts.report, artifacts.dashboard, hints),
+      enrichCover: async ({ info }) => info,
+      renderCover: ({ pdf, info, font, icon, artifacts }) => renderDarkpoolCover(pdf, info, font, icon, artifacts),
+      sectionPlan: (artifacts) => [
+        {
+          title: "Dashboard",
+          content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
+        },
+        {
+          title: "Full Report",
+          content: artifacts.report,
+        },
+        {
+          title: "Evidence",
+          content: textOrUnknown(artifacts.evidenceMarkdown, "evidence.md"),
+        },
+        {
+          title: "Assumptions",
+          content: assumptionsMarkdown(artifacts.assumptions),
+        },
+      ],
+      qualityGate: ({ artifacts }) =>
+        qualityIssuesDarkpool({
+          report: artifacts.report,
+          dashboard: artifacts.dashboard,
+          assumptions: artifacts.assumptions,
+          evidenceMarkdown: artifacts.evidenceMarkdown,
+          evidenceJson: artifacts.evidenceJson,
+        }),
+    }
+  }
+
+  return {
+    buildCoverData: ({ artifacts, hints }) => reportCoverData(artifacts.report, artifacts.dashboard, hints),
+    enrichCover: async ({ info, ctx }) => enrichCover(info, ctx),
+    renderCover: ({ pdf, info, font, icon }) => renderReportCover(pdf, info, font, icon),
+    sectionPlan: (artifacts) => [
+      {
+        title: "Full Report",
+        content: artifacts.report,
+      },
+      {
+        title: "Dashboard",
+        content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
+      },
+      {
+        title: "Assumptions",
+        content: assumptionsMarkdown(artifacts.assumptions),
+      },
+    ],
+    qualityGate: ({ info, artifacts }) =>
+      qualityIssuesReport(info, artifacts.report, artifacts.dashboard, artifacts.assumptions),
+  }
+}
+
+function artifactReadPatterns(root: string, subcommand: PdfSubcommand) {
+  const report = path.join(root, "report.md")
+  const dashboard = path.join(root, "dashboard.md")
+  const assumptions = path.join(root, "assumptions.json")
+  if (subcommand === "report") {
+    return [report, dashboard, assumptions]
+  }
+  return [report, dashboard, assumptions, path.join(root, "evidence.md"), path.join(root, "evidence.json")]
+}
+
+async function loadArtifacts(root: string, subcommand: PdfSubcommand): Promise<LoadedArtifacts> {
+  const report = path.join(root, "report.md")
+  const dashboard = path.join(root, "dashboard.md")
+  const assumptions = path.join(root, "assumptions.json")
+
+  if (subcommand === "report") {
+    return {
+      report: await readRequired(report),
+      dashboard: await readOptional(dashboard),
+      assumptions: await readOptional(assumptions),
+    }
+  }
+
+  return {
+    report: await readRequired(report),
+    dashboard: await readRequired(dashboard),
+    assumptions: await readRequired(assumptions),
+    evidenceMarkdown: await readRequired(path.join(root, "evidence.md")),
+    evidenceJson: await readRequired(path.join(root, "evidence.json")),
+  }
+}
+
+function defaultRootHints(root: string, subcommand: PdfSubcommand): RootHints {
+  if (subcommand === "report") {
+    return {
+      ticker: tickerLabel(path.basename(path.dirname(root))),
+      date: path.basename(root),
+    }
+  }
+
+  if (path.basename(root) === "darkpool-anomaly") {
+    const dateRoot = path.dirname(root)
+    return {
+      ticker: tickerLabel(path.basename(path.dirname(dateRoot))),
+      date: path.basename(dateRoot),
+    }
+  }
+
+  return {
+    ticker: tickerLabel(path.basename(path.dirname(root))),
+    date: path.basename(root),
+  }
+}
+
+function reportCoverData(report: string, dashboard: string | undefined, hints: RootHints): Cover {
   const title =
     report
       .split("\n")
       .map((line) => line.trim())
       .find((line) => line.startsWith("# "))
       ?.replace(/^#\s+/, "")
-      .trim() ?? `${tickerLabel(path.basename(path.dirname(root)))} Research Report`
+      .trim() ?? `${hints.ticker} Research Report`
   const tickerLine = field(report, "Ticker")
   const dateLine = field(report, "Report Date")
-  const ticker = tickerLabel(tickerLine ?? path.basename(path.dirname(root)))
-  const date = dateLine ?? path.basename(root)
+  const ticker = tickerLabel(tickerLine ?? hints.ticker)
+  const date = dateLine ?? hints.date
   const sector = field(report, "Sector") ?? tableRow(report, "Sector")?.[1] ?? tableRow(dashboard, "Sector")?.[1] ?? "unknown"
   const headquarters =
     field(report, "Headquarters") ??
@@ -280,6 +487,58 @@ function coverData(report: string, dashboard: string | undefined, root: string):
     summary,
     positive: pick(positive, ["unknown"]),
     negative: pick(negative, ["unknown"]),
+    metrics,
+  }
+}
+
+function darkpoolCoverData(report: string, dashboard: string | undefined, hints: RootHints): Cover {
+  const title =
+    report
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.startsWith("# "))
+      ?.replace(/^#\s+/, "")
+      .trim() ?? `${hints.ticker} Darkpool Anomaly Report`
+
+  const tickerLine = field(report, "Ticker")
+  const dateLine = field(report, "Report Date")
+  const ticker = tickerLabel(tickerLine ?? hints.ticker)
+  const date = dateLine ?? hints.date
+
+  const summary = trim(plainText(executiveSummary(report)), 1400)
+  const positive = pickList(report, [/top anomalies/i, /findings/i]) ?? []
+  const negative = pickList(report, [/change log/i, /resolved/i]) ?? []
+
+  const mode =
+    report.match(/^\s*Mode:\s*(ticker|portfolio)\s*$/im)?.[1] ??
+    metricValue(dashboard, [/^mode$/i]) ??
+    "unknown"
+  const threshold =
+    report.match(/Significance threshold \(\|z\|\):\s*([-+]?\d+(?:\.\d+)?)/i)?.[1] ??
+    metricValue(dashboard, [/^significance threshold/i]) ??
+    "unknown"
+
+  const metrics = [
+    metric("Mode", mode),
+    metric("Threshold |z|", threshold),
+    metric("Signal", "darkpool anomaly"),
+    metric("Coverage", "off-exchange"),
+    metric("Ticker", ticker),
+    metric("Report Date", date),
+  ]
+
+  return {
+    title,
+    ticker,
+    date,
+    sector: "darkpool",
+    headquarters: "unknown",
+    icon: "",
+    score: "ANOM",
+    band: "NEUTRAL",
+    summary,
+    positive: pick(positive, ["See top anomalies table for ranked signals."]),
+    negative: pick(negative, ["Resolved and degraded signals are listed in transitions."]),
     metrics,
   }
 }
@@ -363,6 +622,13 @@ function name(raw: string | undefined, ticker: string, date: string) {
   return withExt || `${ticker}-${date}.pdf`
 }
 
+function formatNumber(input: number, digits = 3) {
+  if (!Number.isFinite(input)) return "unknown"
+  return input.toLocaleString("en-US", {
+    maximumFractionDigits: digits,
+  })
+}
+
 function tickerLabel(input: string) {
   const first = input.trim().match(/[A-Za-z0-9.-]+/)?.[0] ?? "REPORT"
   return first.toUpperCase()
@@ -440,7 +706,29 @@ function cell(input: string) {
   return cleanInline(input).replace(/\|/g, "\\|").replace(/\n/g, "<br/>")
 }
 
-function qualityIssues(info: Cover, report: string, dashboard: string | undefined, assumptions: string | undefined) {
+function qualityIssuesBySubcommand(input: {
+  subcommand: PdfSubcommand
+  info: Cover
+  report: string
+  dashboard?: string
+  assumptions?: string
+  evidenceMarkdown?: string
+  evidenceJson?: string
+}) {
+  if (input.subcommand === "darkpool-anomaly") {
+    return qualityIssuesDarkpool({
+      report: input.report,
+      dashboard: input.dashboard,
+      assumptions: input.assumptions,
+      evidenceMarkdown: input.evidenceMarkdown,
+      evidenceJson: input.evidenceJson,
+    })
+  }
+
+  return qualityIssuesReport(input.info, input.report, input.dashboard, input.assumptions)
+}
+
+function qualityIssuesReport(info: Cover, report: string, dashboard: string | undefined, assumptions: string | undefined) {
   const issues: string[] = []
   const critical = ["Stock Price", "YTD Return", "52W Range", "Analyst Consensus"]
   critical.forEach((label) => {
@@ -485,6 +773,146 @@ function qualityIssues(info: Cover, report: string, dashboard: string | undefine
   issues.push(...dashboardSourceIssues(dashboard))
 
   return issues
+}
+
+function qualityIssuesDarkpool(input: {
+  report: string
+  dashboard?: string
+  assumptions?: string
+  evidenceMarkdown?: string
+  evidenceJson?: string
+}) {
+  const issues: string[] = []
+  if (!/^#\s+Darkpool Anomaly Report\b/im.test(input.report)) {
+    issues.push("`report.md` must start with `# Darkpool Anomaly Report`.")
+  }
+  if (!/^\s*Mode:\s*(ticker|portfolio)\s*$/im.test(input.report)) {
+    issues.push("`report.md` must include `Mode: ticker|portfolio`.")
+  }
+  if (!/Significance threshold \(\|z\|\):\s*[-+]?\d+(?:\.\d+)?/i.test(input.report)) {
+    issues.push("`report.md` is missing a numeric `Significance threshold (|z|)` line.")
+  }
+
+  if (!input.dashboard) {
+    issues.push("Missing required darkpool artifact `dashboard.md`.")
+  } else if (!hasDarkpoolAnomalyTable(input.dashboard)) {
+    issues.push(
+      "`dashboard.md` must include an anomaly table with columns: Ticker, Date, Metric, Current, Baseline, |z|, Severity, Direction, State.",
+    )
+  }
+
+  if (!input.assumptions) {
+    issues.push("Missing required darkpool artifact `assumptions.json`.")
+  } else {
+    const parsed = parseJson(input.assumptions)
+    const root = asRecord(parsed)
+    const detection = asRecord(root?.detection_parameters)
+    if (!root || !detection) {
+      issues.push("`assumptions.json` must be valid JSON and include `detection_parameters`.")
+    } else {
+      if (!Number.isFinite(toFiniteNumber(detection.lookback_days))) {
+        issues.push("`assumptions.json` is missing numeric `detection_parameters.lookback_days`.")
+      }
+      if (!Number.isFinite(toFiniteNumber(detection.min_samples))) {
+        issues.push("`assumptions.json` is missing numeric `detection_parameters.min_samples`.")
+      }
+      if (!Number.isFinite(toFiniteNumber(detection.significance_threshold))) {
+        issues.push("`assumptions.json` is missing numeric `detection_parameters.significance_threshold`.")
+      }
+    }
+  }
+
+  if (!input.evidenceMarkdown) {
+    issues.push("Missing required darkpool artifact `evidence.md`.")
+  }
+
+  if (!input.evidenceJson) {
+    issues.push("Missing required darkpool artifact `evidence.json`.")
+  } else {
+    const parsed = parseJson(input.evidenceJson)
+    const root = asRecord(parsed)
+    if (!root) {
+      issues.push("`evidence.json` must be valid JSON object output from `report_darkpool_anomaly`.")
+    } else {
+      if (!Array.isArray(root.tickers)) {
+        issues.push("`evidence.json` must include `tickers` array.")
+      }
+      if (!Array.isArray(root.anomalies)) {
+        issues.push("`evidence.json` must include `anomalies` array.")
+      }
+      if (!Array.isArray(root.transitions)) {
+        issues.push("`evidence.json` must include `transitions` array.")
+      } else {
+        const validState = new Set(["new", "persisted", "severity_change", "resolved"])
+        if (!root.transitions.every((item) => asRecord(item) && validState.has(String(asRecord(item)?.state ?? "").trim()))) {
+          issues.push("`evidence.json.transitions` entries must include valid `state` values.")
+        }
+      }
+      if (Array.isArray(root.anomalies)) {
+        const validAnomalyShape = root.anomalies.every((item) => {
+          const row = asRecord(item)
+          if (!row) return false
+          const ticker = asOptionalText(row.ticker)
+          const severity = asOptionalText(row.severity)
+          const direction = asOptionalText(row.direction)
+          const absZ = toFiniteNumber(row.abs_z_score)
+          return Boolean(ticker && severity && direction && Number.isFinite(absZ))
+        })
+        if (!validAnomalyShape) {
+          issues.push("`evidence.json.anomalies` entries must include ticker, severity, direction, and numeric abs_z_score.")
+        }
+      }
+    }
+  }
+
+  return issues
+}
+
+function hasDarkpoolAnomalyTable(input: string) {
+  const required = ["ticker", "date", "metric", "current", "baseline", "z", "severity", "direction", "state"]
+  return tableBlocks(input).some((table) => {
+    const normalized = table.head.map((cell) => normalize(cell))
+    return required.every((item) => normalized.some((cell) => cell.includes(item)))
+  })
+}
+
+function asRecord(input: unknown) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return
+  return input as Record<string, unknown>
+}
+
+function asRecordArray(input: unknown, error: string) {
+  if (!Array.isArray(input)) {
+    throw new Error(error)
+  }
+  return input
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+}
+
+function asOptionalText(input: unknown) {
+  if (input === null || input === undefined) return
+  const text = String(input).trim()
+  if (!text) return
+  return text
+}
+
+function toFiniteNumber(input: unknown) {
+  if (typeof input === "number") return Number.isFinite(input) ? input : Number.NaN
+  if (typeof input === "string") {
+    const text = input.trim()
+    if (!text) return Number.NaN
+    const parsed = Number(text)
+    return Number.isFinite(parsed) ? parsed : Number.NaN
+  }
+  return Number.NaN
+}
+
+function severityRank(value: string) {
+  if (value === "high") return 3
+  if (value === "medium") return 2
+  if (value === "low") return 1
+  return 0
 }
 
 function isUnknown(value: string) {
@@ -658,7 +1086,7 @@ async function embedIcon(pdf: PDFDocument, url: string): Promise<Image | undefin
   return pdf.embedJpg(body).catch(() => undefined)
 }
 
-function cover(pdf: PDFDocument, info: Cover, font: FontSet, icon?: Image) {
+function renderReportCover(pdf: PDFDocument, info: Cover, font: FontSet, icon?: Image) {
   const page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
   page.drawRectangle({
     x: 0,
@@ -824,6 +1252,316 @@ function cover(pdf: PDFDocument, info: Cover, font: FontSet, icon?: Image) {
       color: THEME.text,
     })
     y -= 13
+  }
+}
+
+function renderDarkpoolCover(
+  pdf: PDFDocument,
+  info: Cover,
+  font: FontSet,
+  icon: Image | undefined,
+  artifacts: LoadedArtifacts,
+) {
+  const snapshot = extractDarkpoolCoverData(artifacts)
+  const page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width: PAGE_WIDTH,
+    height: PAGE_HEIGHT,
+    color: THEME.paper,
+  })
+
+  const hero = 220
+  page.drawRectangle({
+    x: 0,
+    y: PAGE_HEIGHT - hero,
+    width: PAGE_WIDTH,
+    height: hero,
+    color: THEME.navy,
+  })
+  page.drawRectangle({
+    x: 0,
+    y: PAGE_HEIGHT - hero - 6,
+    width: PAGE_WIDTH,
+    height: 6,
+    color: THEME.sky,
+  })
+
+  tickerBadge(page, font, PAGE_WIDTH - MARGIN - 44, PAGE_HEIGHT - 28, 38, info.ticker)
+
+  page.drawText("OpenCode Finance", {
+    x: MARGIN,
+    y: PAGE_HEIGHT - 42,
+    size: 12,
+    font: font.uiBold,
+    color: THEME.paper,
+  })
+  page.drawText("Darkpool Anomaly Brief", {
+    x: MARGIN,
+    y: PAGE_HEIGHT - 59,
+    size: 9.6,
+    font: font.ui,
+    color: hex("#BFDBFE"),
+  })
+
+  const title = pick(wrap(info.title, PAGE_WIDTH - MARGIN * 2 - 60, font.bold, 22), [info.title]).slice(0, 2)
+  let titleY = PAGE_HEIGHT - 104
+  title.forEach((line) => {
+    page.drawText(line, {
+      x: MARGIN,
+      y: titleY,
+      size: 22,
+      font: font.bold,
+      color: THEME.paper,
+    })
+    titleY -= 25
+  })
+
+  page.drawText(`Ticker: ${info.ticker}   Report Date: ${info.date}`, {
+    x: MARGIN,
+    y: PAGE_HEIGHT - 170,
+    size: 9.6,
+    font: font.ui,
+    color: hex("#DBEAFE"),
+  })
+  page.drawText(
+    `Threshold |z|: ${formatNumber(snapshot.threshold, 3)}   Lookback: ${snapshot.lookbackDays}   Min samples: ${snapshot.minSamples}`,
+    {
+      x: MARGIN,
+      y: PAGE_HEIGHT - 185,
+      size: 9.6,
+      font: font.ui,
+      color: hex("#BFDBFE"),
+    },
+  )
+
+  const gap = 10
+  const chipH = 56
+  const chipW = (PAGE_WIDTH - MARGIN * 2 - gap * 2) / 3
+  const chipsTop = PAGE_HEIGHT - hero - 26
+  const metrics: Metric[] = [
+    { label: "Significant", value: String(snapshot.significantCount), tone: snapshot.significantCount > 0 ? "risk" : "neutral" },
+    { label: "New", value: String(snapshot.transitions.new), tone: snapshot.transitions.new > 0 ? "risk" : "neutral" },
+    { label: "Persisted", value: String(snapshot.transitions.persisted), tone: snapshot.transitions.persisted > 0 ? "risk" : "neutral" },
+    {
+      label: "Severity Changed",
+      value: String(snapshot.transitions.severity_change),
+      tone: snapshot.transitions.severity_change > 0 ? "risk" : "neutral",
+    },
+    { label: "Resolved", value: String(snapshot.transitions.resolved), tone: snapshot.transitions.resolved > 0 ? "positive" : "neutral" },
+    { label: "Signal Type", value: "Off-exchange", tone: "neutral" },
+  ]
+  metrics.forEach((item, index) => {
+    const col = index % 3
+    const row = Math.floor(index / 3)
+    const x = MARGIN + col * (chipW + gap)
+    const y = chipsTop - row * (chipH + gap) - chipH
+    chip(page, font, x, y, chipW, chipH, item)
+  })
+
+  const tableTop = chipsTop - chipH * 2 - gap - 16
+  const tableBottom = drawDarkpoolTopTable(page, font, MARGIN, tableTop, PAGE_WIDTH - MARGIN * 2, snapshot.topAnomalies.slice(0, 5))
+
+  const summaryTop = tableBottom - 22
+  page.drawText("Anomaly Summary", {
+    x: MARGIN,
+    y: summaryTop,
+    size: 14,
+    font: font.uiBold,
+    color: THEME.ink,
+  })
+
+  const maxHeight = 64
+  const lines = wrap(info.summary || "Summary unavailable.", PAGE_WIDTH - MARGIN * 2, font.regular, 10.4)
+  let y = summaryTop - 18
+  for (const line of lines) {
+    if (y < maxHeight) break
+    if (!line) {
+      y -= 7
+      continue
+    }
+    page.drawText(line, {
+      x: MARGIN,
+      y,
+      size: 10.4,
+      font: font.regular,
+      color: THEME.text,
+    })
+    y -= 13
+  }
+
+  if (icon) {
+    const size = 30
+    const x = PAGE_WIDTH - MARGIN - size
+    const y = 70
+    page.drawRectangle({
+      x: x - 2,
+      y: y - 2,
+      width: size + 4,
+      height: size + 4,
+      color: THEME.paper,
+      borderColor: THEME.line,
+      borderWidth: 1,
+    })
+    page.drawImage(icon, {
+      x,
+      y,
+      width: size,
+      height: size,
+    })
+  }
+}
+
+function drawDarkpoolTopTable(
+  page: Awaited<ReturnType<PDFDocument["addPage"]>>,
+  font: FontSet,
+  x: number,
+  top: number,
+  width: number,
+  rows: DarkpoolTopAnomaly[],
+) {
+  page.drawText("Top Anomalies", {
+    x,
+    y: top,
+    size: 12,
+    font: font.uiBold,
+    color: THEME.ink,
+  })
+
+  const headers = ["Ticker", "Severity", "Direction", "|z|", "State"]
+  const ratios = [0.2, 0.2, 0.2, 0.16, 0.24]
+  const rowHeight = 18
+  const tableTop = top - 10
+  const fillRows = rows.length
+    ? rows
+    : [
+        {
+          ticker: "none",
+          severity: "none",
+          direction: "none",
+          absZ: 0,
+          state: "none",
+        },
+      ]
+
+  const drawRow = (cells: string[], y: number, header = false) => {
+    let cursor = x
+    cells.forEach((cell, index) => {
+      const w = width * ratios[index]
+      page.drawRectangle({
+        x: cursor,
+        y: y - rowHeight,
+        width: w,
+        height: rowHeight,
+        color: header ? THEME.card : THEME.paper,
+        borderColor: THEME.line,
+        borderWidth: 0.8,
+      })
+      page.drawText(cell, {
+        x: cursor + 4,
+        y: y - 12,
+        size: 8.4,
+        font: header ? font.uiBold : font.regular,
+        color: THEME.text,
+      })
+      cursor += w
+    })
+  }
+
+  drawRow(headers, tableTop, true)
+  fillRows.forEach((row, index) => {
+    drawRow(
+      [row.ticker, row.severity, row.direction, formatNumber(row.absZ, 3), row.state],
+      tableTop - rowHeight * (index + 1),
+      false,
+    )
+  })
+
+  return tableTop - rowHeight * (fillRows.length + 1)
+}
+
+function extractDarkpoolCoverData(artifacts: LoadedArtifacts): DarkpoolCoverData {
+  if (!artifacts.evidenceJson) {
+    throw new Error("Missing required darkpool artifact `evidence.json`.")
+  }
+  if (!artifacts.assumptions) {
+    throw new Error("Missing required darkpool artifact `assumptions.json`.")
+  }
+
+  const evidence = asRecord(parseJson(artifacts.evidenceJson))
+  if (!evidence) {
+    throw new Error("`evidence.json` must be a valid JSON object.")
+  }
+  const assumptions = asRecord(parseJson(artifacts.assumptions))
+  if (!assumptions) {
+    throw new Error("`assumptions.json` must be a valid JSON object.")
+  }
+  const detection = asRecord(assumptions.detection_parameters)
+  if (!detection) {
+    throw new Error("`assumptions.json` must include `detection_parameters`.")
+  }
+
+  const threshold = toFiniteNumber(detection.significance_threshold)
+  const lookbackDays = toFiniteNumber(detection.lookback_days)
+  const minSamples = toFiniteNumber(detection.min_samples)
+  if (!Number.isFinite(threshold) || !Number.isFinite(lookbackDays) || !Number.isFinite(minSamples)) {
+    throw new Error("`assumptions.json` detection parameters must include numeric threshold, lookback_days, and min_samples.")
+  }
+
+  const transitions = asRecordArray(evidence.transitions, "`evidence.json` must include `transitions` array.")
+  const anomalies = asRecordArray(evidence.anomalies, "`evidence.json` must include `anomalies` array.")
+
+  const transitionCounts: DarkpoolTransitionCounts = {
+    new: 0,
+    persisted: 0,
+    severity_change: 0,
+    resolved: 0,
+  }
+  const stateByKey = new Map<string, string>()
+
+  for (const item of transitions) {
+    const state = String(item.state ?? "").trim()
+    if (state === "new" || state === "persisted" || state === "severity_change" || state === "resolved") {
+      transitionCounts[state] += 1
+    }
+    const key = asOptionalText(item.key)
+    const current = asRecord(item.current)
+    const currentKey = asOptionalText(current?.key)
+    if (key) stateByKey.set(key, state || "new")
+    if (currentKey) stateByKey.set(currentKey, state || "new")
+  }
+
+  const topAnomalies = anomalies
+    .map((item) => {
+      const key = asOptionalText(item.key)
+      const ticker = asOptionalText(item.ticker) ?? "unknown"
+      const severity = asOptionalText(item.severity) ?? "unknown"
+      const direction = asOptionalText(item.direction) ?? "unknown"
+      const absZ = toFiniteNumber(item.abs_z_score)
+      if (!Number.isFinite(absZ)) return
+      return {
+        ticker: ticker.toUpperCase(),
+        severity: severity.toLowerCase(),
+        direction: direction.toLowerCase(),
+        absZ,
+        state: key ? (stateByKey.get(key) ?? "new") : "new",
+      } satisfies DarkpoolTopAnomaly
+    })
+    .filter((item): item is DarkpoolTopAnomaly => Boolean(item))
+    .toSorted((a, b) => {
+      const severityOrder = severityRank(b.severity) - severityRank(a.severity)
+      if (severityOrder !== 0) return severityOrder
+      return b.absZ - a.absZ
+    })
+
+  return {
+    threshold,
+    lookbackDays: Math.round(lookbackDays),
+    minSamples: Math.round(minSamples),
+    transitions: transitionCounts,
+    significantCount: anomalies.length,
+    topAnomalies,
   }
 }
 
@@ -1574,11 +2312,20 @@ function hex(input: string) {
 }
 
 export const ReportPdfInternal = {
-  coverData,
+  parsePdfSubcommand,
+  getPdfProfile,
+  sectionPlanForSubcommand,
+  coverData: reportCoverData,
+  reportCoverData,
+  darkpoolCoverData,
+  extractDarkpoolCoverData,
+  defaultRootHints,
   directionalScore,
   listUnder,
   tableRow,
   field,
   assumptionsMarkdown,
-  qualityIssues,
+  qualityIssuesBySubcommand,
+  qualityIssuesReport,
+  qualityIssuesDarkpool,
 }
