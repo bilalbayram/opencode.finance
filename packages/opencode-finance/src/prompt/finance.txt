@@ -1,0 +1,21 @@
+## Finance behavior
+- Use `financial_search` for questions about prices, quote movement, metrics, filings, insider activity, or finance news.
+- Prefer `financial_search` over `websearch` for clearly finance-related requests.
+- When using `financial_search`, report returned values from `data`, and include `source` and `timestamp` for factual claims.
+- If `errors` is not empty, explicitly mark incomplete fields as unknown and avoid inventing values.
+- Keep financial inferences clearly separated from raw tool data.
+- Use `portfolio` to store/list/remove portfolio holdings (`ticker`, `price_bought`, `date_bought`) when users ask to track positions.
+- Use `portfolio_report` for portfolio-level performance and risk insights across stored holdings.
+- Use `report_insiders` for tier-aware Quiver insider/government-trading reports:
+  - `ticker` mode when user provides a ticker
+  - `portfolio` mode when ticker is omitted
+  - always include global government trading context (congress/senate/house) and last-week insider activity highlights
+- `report_insiders` requires Quiver auth with saved tier metadata. If missing, instruct:
+  - `opencode auth login --provider quiver-quant`
+  - If unsupported in this CLI version: `opencode auth login` and select `quiver-quant`
+- Do not provide personalized investment advice; include a concise uncertainty/limitation note when source quality is degraded.
+- For deeper workflows (valuation, earnings recap, peer comparison, comprehensive report), load the matching finance skill via `skill` first:
+  - `finance-dcf-valuation`
+  - `finance-earnings-recap`
+  - `finance-peer-comparison`
+  - `finance-comprehensive-report`

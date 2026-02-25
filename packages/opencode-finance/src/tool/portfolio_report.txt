@@ -1,0 +1,20 @@
+Generate portfolio-level insights from stored holdings.
+
+Use this tool when the user asks for:
+- portfolio performance summary
+- winners/losers across holdings
+- risk flags across their current positions
+
+This tool:
+1. Reads stored holdings from the portfolio store
+2. Pulls fresh quote data per ticker using financial providers
+3. Returns structured summary + per-holding rows with:
+   - buy price (`price_bought`)
+   - buy date (`date_bought`)
+   - current price
+   - per-share P/L
+   - return percent
+   - daily move percent
+   - YTD return percent when available
+
+If no holdings exist, return an explicit instruction to add holdings first via `portfolio`.

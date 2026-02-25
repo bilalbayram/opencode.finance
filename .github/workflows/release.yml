@@ -1,0 +1,157 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Determine release state
+        id: determine
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE_JSON="packages/opencode-finance/package.json"
+          CURRENT_VERSION="$(bun -e "const pkg = JSON.parse(await Bun.file('${PACKAGE_JSON}').text()); process.stdout.write(pkg.version)")"
+          PACKAGE_NAME="$(bun -e "const pkg = JSON.parse(await Bun.file('${PACKAGE_JSON}').text()); process.stdout.write(pkg.name)")"
+
+          if [[ "${CURRENT_VERSION}" == *-* ]]; then
+            echo "Prerelease versions are not allowed on main: ${CURRENT_VERSION}" >&2
+            exit 1
+          fi
+
+          PREVIOUS_VERSION=""
+          if [ "${EVENT_NAME}" = "push" ] && [ -n "${BEFORE_SHA}" ] && [ "${BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]; then
+            if git cat-file -e "${BEFORE_SHA}:${PACKAGE_JSON}" >/dev/null 2>&1; then
+              PREVIOUS_VERSION="$(git show "${BEFORE_SHA}:${PACKAGE_JSON}" | bun -e "const pkg = JSON.parse(await Bun.stdin.text()); process.stdout.write(pkg.version ?? '')")"
+            fi
+          elif git rev-parse HEAD^ >/dev/null 2>&1 && git cat-file -e "HEAD^:${PACKAGE_JSON}" >/dev/null 2>&1; then
+            PREVIOUS_VERSION="$(git show "HEAD^:${PACKAGE_JSON}" | bun -e "const pkg = JSON.parse(await Bun.stdin.text()); process.stdout.write(pkg.version ?? '')")"
+          fi
+
+          if [ "${CURRENT_VERSION}" = "${PREVIOUS_VERSION}" ]; then
+            CHANGED="false"
+          else
+            CHANGED="true"
+          fi
+
+          git fetch --tags --force
+          if git tag -l "v${CURRENT_VERSION}" | grep -qx "v${CURRENT_VERSION}"; then
+            TAG_EXISTS="true"
+          else
+            TAG_EXISTS="false"
+          fi
+
+          {
+            echo "current_version=${CURRENT_VERSION}"
+            echo "previous_version=${PREVIOUS_VERSION}"
+            echo "package_name=${PACKAGE_NAME}"
+            echo "changed=${CHANGED}"
+            echo "tag_exists=${TAG_EXISTS}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Skip when version did not change
+        if: steps.determine.outputs.changed != 'true'
+        run: echo "No plugin version change detected. Skipping release."
+
+      - name: Verify NPM token
+        if: steps.determine.outputs.changed == 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "NPM_TOKEN secret is required for publishing." >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        if: steps.determine.outputs.changed == 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Validate package
+        if: steps.determine.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          bun run --cwd packages/opencode-finance typecheck
+          bun run --cwd packages/opencode-finance build
+
+      - name: Publish to npm
+        if: steps.determine.outputs.changed == 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME="${{ steps.determine.outputs.package_name }}"
+          CURRENT_VERSION="${{ steps.determine.outputs.current_version }}"
+          ENCODED_NAME="${PACKAGE_NAME//@/%40}"
+          ENCODED_NAME="${ENCODED_NAME//\//%2F}"
+
+          if curl -fsS "https://registry.npmjs.org/${ENCODED_NAME}/${CURRENT_VERSION}" >/dev/null 2>&1; then
+            echo "${PACKAGE_NAME}@${CURRENT_VERSION} is already published. Skipping publish."
+            exit 0
+          fi
+
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "${HOME}/.npmrc"
+          cd packages/opencode-finance
+          bun publish --access public --provenance
+
+      - name: Ensure release tag exists
+        if: steps.determine.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+
+          CURRENT_VERSION="${{ steps.determine.outputs.current_version }}"
+          TAG="v${CURRENT_VERSION}"
+
+          if git tag -l "${TAG}" | grep -qx "${TAG}"; then
+            echo "Tag ${TAG} already exists."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+      - name: Ensure GitHub release exists
+        if: steps.determine.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          CURRENT_VERSION="${{ steps.determine.outputs.current_version }}"
+          TAG="v${CURRENT_VERSION}"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists."
+            exit 0
+          fi
+
+          gh release create "${TAG}" --title "${TAG}" --verify-tag --generate-notes

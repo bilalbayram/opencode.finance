@@ -1,0 +1,20 @@
+Use this tool to manage the user's stored portfolio holdings.
+
+Prefer this tool when the user wants to:
+- add or update a holding
+- list holdings
+- remove a holding
+- clear holdings
+
+Fields for each holding:
+- `ticker` (symbol)
+- `price_bought` (buy price per share)
+- `date_bought` (YYYY-MM-DD)
+
+Action guide:
+- `list` -> read holdings
+- `upsert` -> create/update one holding
+- `remove` -> delete one holding by ticker
+- `clear` -> remove all holdings
+
+After write actions (`upsert`, `remove`, `clear`), it is good practice to show the updated holdings to confirm state.

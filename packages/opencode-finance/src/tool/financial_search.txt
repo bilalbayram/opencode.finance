@@ -1,0 +1,21 @@
+Call this tool for finance-oriented questions when the user asks for current or historical
+financial data, fundamentals, filings, insider activity, or finance news.
+
+Use this tool in preference to web search/scraping when the request has a clear ticker
+or finance intent. Keep `financial` outputs strictly tied to tool results.
+
+Set the intent explicitly when it can be identified from user intent:
+- quote: stock price, current valuation, and trading movement
+- fundamentals: metrics, revenue, income, free cash flow, margins
+- filings: SEC filings such as 10-Q / 10-K / 8-K
+- insider: insider activity, beneficial ownership, or insider transactions
+- news: financial news, press releases, and sentiment for a ticker
+
+Use `coverage: "comprehensive"` when you need to merge multiple providers to reduce missing fields.
+
+When this tool returns `errors`, treat missing values as uncertainty and call out that some
+facts are unknown rather than inventing values.
+
+Do not provide investment advice, forecasts, or recommendations. Treat the result as a
+data retrieval primitive and distinguish factual values (`data`, `source`, `timestamp`) from
+inference and interpretation.
