@@ -90,18 +90,33 @@ const TICKER_ALT: Endpoint[] = [
     label: "Ticker Lobbying",
     endpoint: "/beta/historical/lobbying/{ticker}",
     tier: "tier_1",
+    query: (input) => ({
+      limit: clampHistoricalLimit(input.limit),
+      page_size: clampHistoricalLimit(input.limit),
+      page: 1,
+    }),
   },
   {
     id: "ticker_gov_contracts",
     label: "Ticker Government Contracts",
     endpoint: "/beta/historical/govcontractsall/{ticker}",
     tier: "tier_1",
+    query: (input) => ({
+      limit: clampHistoricalLimit(input.limit),
+      page_size: clampHistoricalLimit(input.limit),
+      page: 1,
+    }),
   },
   {
     id: "ticker_off_exchange",
     label: "Ticker Off-Exchange Activity",
     endpoint: "/beta/historical/offexchange/{ticker}",
     tier: "tier_1",
+    query: (input) => ({
+      limit: clampHistoricalLimit(input.limit),
+      page_size: clampHistoricalLimit(input.limit),
+      page: 1,
+    }),
   },
 ]
 
@@ -122,6 +137,14 @@ function clampLimit(input?: number) {
   const value = Math.floor(input ?? 50)
   if (value < 1) return 1
   if (value > 100) return 100
+  return value
+}
+
+function clampHistoricalLimit(input?: number) {
+  if (!Number.isFinite(input)) return 200
+  const value = Math.floor(input ?? 200)
+  if (value < 1) return 1
+  if (value > 500) return 500
   return value
 }
 

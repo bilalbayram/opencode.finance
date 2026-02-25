@@ -40,7 +40,7 @@ const parameters = z.object({
   significance_threshold: z.number().positive().max(10).optional().describe("Absolute robust z-score threshold for anomaly significance."),
   severity_medium: z.number().positive().max(20).optional().describe("Optional medium-severity threshold override."),
   severity_high: z.number().positive().max(20).optional().describe("Optional high-severity threshold override."),
-  limit: z.number().int().min(10).max(500).optional().describe("Dataset row limit for Quiver off-exchange endpoint."),
+  limit: z.number().int().min(10).max(500).optional().describe("Maximum off-exchange rows used for analysis."),
   refresh: z.boolean().optional().describe("Reserved for compatibility; Quiver endpoints are always fetched live."),
 })
 
@@ -352,7 +352,15 @@ async function fetchRequiredOffExchange(input: {
     throw new Error(`Required dataset ${dataset.label} returned zero rows for ${input.ticker}.`)
   }
 
-  return dataset
+  const boundedRows = dataset.rows.slice(0, input.limit)
+  if (boundedRows.length === 0) {
+    throw new Error(`Required dataset ${dataset.label} returned zero usable rows after applying limit for ${input.ticker}.`)
+  }
+
+  return {
+    ...dataset,
+    rows: boundedRows,
+  }
 }
 
 async function readHistoricalRuns(input: { scopeRoots: string[]; outputRoot: string }): Promise<HistoricalRun[]> {

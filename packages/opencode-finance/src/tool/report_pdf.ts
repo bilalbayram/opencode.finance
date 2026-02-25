@@ -14,6 +14,7 @@ const TOP = PAGE_HEIGHT - HEADER_HEIGHT - 30
 const BOTTOM = 56
 const FOOTER_TEXT = "opencode.finance"
 const FOOTER_URL = "https://opencode.finance"
+const PDF_SUBCOMMAND = ["report", "darkpool-anomaly"] as const
 
 const THEME = {
   paper: hex("#F6F8FB"),
@@ -37,12 +38,17 @@ const THEME = {
 }
 
 const parameters = z.object({
+  subcommand: z
+    .enum(PDF_SUBCOMMAND)
+    .optional()
+    .describe("Workflow profile for quality gates and artifact requirements. Defaults to `report`."),
   outputRoot: z.string().describe("Report directory path, usually reports/<TICKER>/<YYYY-MM-DD>/"),
   filename: z.string().optional().describe("Optional PDF filename. Defaults to <TICKER>-<DATE>.pdf inside outputRoot."),
 })
 
 type Font = Awaited<ReturnType<PDFDocument["embedFont"]>>
 type Image = Awaited<ReturnType<PDFDocument["embedPng"]>>
+type PdfSubcommand = (typeof PDF_SUBCOMMAND)[number]
 
 type FontSet = {
   regular: Font
@@ -81,6 +87,19 @@ type SectionStyle = {
   line?: number
 }
 
+type RootHints = {
+  ticker: string
+  date: string
+}
+
+type LoadedArtifacts = {
+  report: string
+  dashboard?: string
+  assumptions?: string
+  evidenceMarkdown?: string
+  evidenceJson?: string
+}
+
 type Row =
   | {
       kind: "blank"
@@ -113,6 +132,7 @@ export const ReportPdfTool = Tool.define("report_pdf", {
   description: DESCRIPTION,
   parameters,
   async execute(params, ctx) {
+    const subcommand = params.subcommand ?? "report"
     const root = path.isAbsolute(params.outputRoot)
       ? path.normalize(params.outputRoot)
       : path.resolve(ctx.directory, params.outputRoot)
@@ -120,26 +140,32 @@ export const ReportPdfTool = Tool.define("report_pdf", {
 
     await assertExternalDirectory(ctx, root, { kind: "directory" })
 
-    const report = path.join(root, "report.md")
-    const dashboard = path.join(root, "dashboard.md")
-    const assumptions = path.join(root, "assumptions.json")
-
     await ctx.ask({
       permission: "read",
-      patterns: [report, dashboard, assumptions],
+      patterns: artifactReadPatterns(root, subcommand),
       always: ["*"],
       metadata: {
         outputRoot: root,
+        subcommand,
       },
     })
 
-    const reportText = await readRequired(report)
-    const dashboardText = await readOptional(dashboard)
-    const assumptionsText = await readOptional(assumptions)
+    const artifacts = await loadArtifacts(root, subcommand)
+    const hints = defaultRootHints(root, subcommand)
 
-    let info = coverData(reportText, dashboardText, root)
-    info = await enrichCover(info, ctx)
-    const quality = qualityIssues(info, reportText, dashboardText, assumptionsText)
+    let info = coverData(artifacts.report, artifacts.dashboard, hints)
+    if (subcommand === "report") {
+      info = await enrichCover(info, ctx)
+    }
+    const quality = qualityIssuesBySubcommand({
+      subcommand,
+      info,
+      report: artifacts.report,
+      dashboard: artifacts.dashboard,
+      assumptions: artifacts.assumptions,
+      evidenceMarkdown: artifacts.evidenceMarkdown,
+      evidenceJson: artifacts.evidenceJson,
+    })
     if (quality.length) {
       throw new Error(
         ["PDF export blocked by institutional quality gate:", ...quality.map((item) => `- ${item}`)].join("\n"),
@@ -169,9 +195,12 @@ export const ReportPdfTool = Tool.define("report_pdf", {
     const icon = await embedIcon(pdf, info.icon)
 
     cover(pdf, info, font, icon)
-    section(pdf, font, info, "Full Report", reportText)
-    section(pdf, font, info, "Dashboard", textOrUnknown(dashboardText, "dashboard.md"))
-    section(pdf, font, info, "Assumptions", assumptionsMarkdown(assumptionsText))
+    section(pdf, font, info, "Full Report", artifacts.report)
+    section(pdf, font, info, "Dashboard", textOrUnknown(artifacts.dashboard, "dashboard.md"))
+    section(pdf, font, info, "Assumptions", assumptionsMarkdown(artifacts.assumptions))
+    if (subcommand === "darkpool-anomaly") {
+      section(pdf, font, info, "Evidence", textOrUnknown(artifacts.evidenceMarkdown, "evidence.md"))
+    }
 
     const pages = pdf.getPages()
     pages.forEach((page, index) => {
@@ -207,18 +236,72 @@ async function readRequired(filepath: string) {
   throw new Error(`Missing required report artifact: ${filepath}`)
 }
 
-function coverData(report: string, dashboard: string | undefined, root: string): Cover {
+function artifactReadPatterns(root: string, subcommand: PdfSubcommand) {
+  const report = path.join(root, "report.md")
+  const dashboard = path.join(root, "dashboard.md")
+  const assumptions = path.join(root, "assumptions.json")
+  if (subcommand === "report") {
+    return [report, dashboard, assumptions]
+  }
+  return [report, dashboard, assumptions, path.join(root, "evidence.md"), path.join(root, "evidence.json")]
+}
+
+async function loadArtifacts(root: string, subcommand: PdfSubcommand): Promise<LoadedArtifacts> {
+  const report = path.join(root, "report.md")
+  const dashboard = path.join(root, "dashboard.md")
+  const assumptions = path.join(root, "assumptions.json")
+
+  if (subcommand === "report") {
+    return {
+      report: await readRequired(report),
+      dashboard: await readOptional(dashboard),
+      assumptions: await readOptional(assumptions),
+    }
+  }
+
+  return {
+    report: await readRequired(report),
+    dashboard: await readRequired(dashboard),
+    assumptions: await readRequired(assumptions),
+    evidenceMarkdown: await readRequired(path.join(root, "evidence.md")),
+    evidenceJson: await readRequired(path.join(root, "evidence.json")),
+  }
+}
+
+function defaultRootHints(root: string, subcommand: PdfSubcommand): RootHints {
+  if (subcommand === "report") {
+    return {
+      ticker: tickerLabel(path.basename(path.dirname(root))),
+      date: path.basename(root),
+    }
+  }
+
+  if (path.basename(root) === "darkpool-anomaly") {
+    const dateRoot = path.dirname(root)
+    return {
+      ticker: tickerLabel(path.basename(path.dirname(dateRoot))),
+      date: path.basename(dateRoot),
+    }
+  }
+
+  return {
+    ticker: tickerLabel(path.basename(path.dirname(root))),
+    date: path.basename(root),
+  }
+}
+
+function coverData(report: string, dashboard: string | undefined, hints: RootHints): Cover {
   const title =
     report
       .split("\n")
       .map((line) => line.trim())
       .find((line) => line.startsWith("# "))
       ?.replace(/^#\s+/, "")
-      .trim() ?? `${tickerLabel(path.basename(path.dirname(root)))} Research Report`
+      .trim() ?? `${hints.ticker} Research Report`
   const tickerLine = field(report, "Ticker")
   const dateLine = field(report, "Report Date")
-  const ticker = tickerLabel(tickerLine ?? path.basename(path.dirname(root)))
-  const date = dateLine ?? path.basename(root)
+  const ticker = tickerLabel(tickerLine ?? hints.ticker)
+  const date = dateLine ?? hints.date
   const sector = field(report, "Sector") ?? tableRow(report, "Sector")?.[1] ?? tableRow(dashboard, "Sector")?.[1] ?? "unknown"
   const headquarters =
     field(report, "Headquarters") ??
@@ -440,7 +523,29 @@ function cell(input: string) {
   return cleanInline(input).replace(/\|/g, "\\|").replace(/\n/g, "<br/>")
 }
 
-function qualityIssues(info: Cover, report: string, dashboard: string | undefined, assumptions: string | undefined) {
+function qualityIssuesBySubcommand(input: {
+  subcommand: PdfSubcommand
+  info: Cover
+  report: string
+  dashboard?: string
+  assumptions?: string
+  evidenceMarkdown?: string
+  evidenceJson?: string
+}) {
+  if (input.subcommand === "darkpool-anomaly") {
+    return qualityIssuesDarkpool({
+      report: input.report,
+      dashboard: input.dashboard,
+      assumptions: input.assumptions,
+      evidenceMarkdown: input.evidenceMarkdown,
+      evidenceJson: input.evidenceJson,
+    })
+  }
+
+  return qualityIssuesReport(input.info, input.report, input.dashboard, input.assumptions)
+}
+
+function qualityIssuesReport(info: Cover, report: string, dashboard: string | undefined, assumptions: string | undefined) {
   const issues: string[] = []
   const critical = ["Stock Price", "YTD Return", "52W Range", "Analyst Consensus"]
   critical.forEach((label) => {
@@ -485,6 +590,104 @@ function qualityIssues(info: Cover, report: string, dashboard: string | undefine
   issues.push(...dashboardSourceIssues(dashboard))
 
   return issues
+}
+
+function qualityIssuesDarkpool(input: {
+  report: string
+  dashboard?: string
+  assumptions?: string
+  evidenceMarkdown?: string
+  evidenceJson?: string
+}) {
+  const issues: string[] = []
+  if (!/^#\s+Darkpool Anomaly Report\b/im.test(input.report)) {
+    issues.push("`report.md` must start with `# Darkpool Anomaly Report`.")
+  }
+  if (!/^\s*Mode:\s*(ticker|portfolio)\s*$/im.test(input.report)) {
+    issues.push("`report.md` must include `Mode: ticker|portfolio`.")
+  }
+  if (!/Significance threshold \(\|z\|\):\s*[-+]?\d+(?:\.\d+)?/i.test(input.report)) {
+    issues.push("`report.md` is missing a numeric `Significance threshold (|z|)` line.")
+  }
+
+  if (!input.dashboard) {
+    issues.push("Missing required darkpool artifact `dashboard.md`.")
+  } else if (!hasDarkpoolAnomalyTable(input.dashboard)) {
+    issues.push(
+      "`dashboard.md` must include an anomaly table with columns: Ticker, Date, Metric, Current, Baseline, |z|, Severity, Direction, State.",
+    )
+  }
+
+  if (!input.assumptions) {
+    issues.push("Missing required darkpool artifact `assumptions.json`.")
+  } else {
+    const parsed = parseJson(input.assumptions)
+    const root = asRecord(parsed)
+    const detection = asRecord(root?.detection_parameters)
+    if (!root || !detection) {
+      issues.push("`assumptions.json` must be valid JSON and include `detection_parameters`.")
+    } else {
+      if (!Number.isFinite(toFiniteNumber(detection.lookback_days))) {
+        issues.push("`assumptions.json` is missing numeric `detection_parameters.lookback_days`.")
+      }
+      if (!Number.isFinite(toFiniteNumber(detection.min_samples))) {
+        issues.push("`assumptions.json` is missing numeric `detection_parameters.min_samples`.")
+      }
+      if (!Number.isFinite(toFiniteNumber(detection.significance_threshold))) {
+        issues.push("`assumptions.json` is missing numeric `detection_parameters.significance_threshold`.")
+      }
+    }
+  }
+
+  if (!input.evidenceMarkdown) {
+    issues.push("Missing required darkpool artifact `evidence.md`.")
+  }
+
+  if (!input.evidenceJson) {
+    issues.push("Missing required darkpool artifact `evidence.json`.")
+  } else {
+    const parsed = parseJson(input.evidenceJson)
+    const root = asRecord(parsed)
+    if (!root) {
+      issues.push("`evidence.json` must be valid JSON object output from `report_darkpool_anomaly`.")
+    } else {
+      if (!Array.isArray(root.tickers)) {
+        issues.push("`evidence.json` must include `tickers` array.")
+      }
+      if (!Array.isArray(root.anomalies)) {
+        issues.push("`evidence.json` must include `anomalies` array.")
+      }
+      if (!Array.isArray(root.transitions)) {
+        issues.push("`evidence.json` must include `transitions` array.")
+      }
+    }
+  }
+
+  return issues
+}
+
+function hasDarkpoolAnomalyTable(input: string) {
+  const required = ["ticker", "date", "metric", "current", "baseline", "z", "severity", "direction", "state"]
+  return tableBlocks(input).some((table) => {
+    const normalized = table.head.map((cell) => normalize(cell))
+    return required.every((item) => normalized.some((cell) => cell.includes(item)))
+  })
+}
+
+function asRecord(input: unknown) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return
+  return input as Record<string, unknown>
+}
+
+function toFiniteNumber(input: unknown) {
+  if (typeof input === "number") return Number.isFinite(input) ? input : Number.NaN
+  if (typeof input === "string") {
+    const text = input.trim()
+    if (!text) return Number.NaN
+    const parsed = Number(text)
+    return Number.isFinite(parsed) ? parsed : Number.NaN
+  }
+  return Number.NaN
 }
 
 function isUnknown(value: string) {
@@ -1575,10 +1778,13 @@ function hex(input: string) {
 
 export const ReportPdfInternal = {
   coverData,
+  defaultRootHints,
   directionalScore,
   listUnder,
   tableRow,
   field,
   assumptionsMarkdown,
-  qualityIssues,
+  qualityIssuesBySubcommand,
+  qualityIssuesReport,
+  qualityIssuesDarkpool,
 }
