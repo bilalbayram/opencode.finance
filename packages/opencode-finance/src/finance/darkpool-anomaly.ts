@@ -92,11 +92,16 @@ const DATE_CANDIDATES = [
 ]
 
 const METRIC_PATTERNS: Array<{ regex: RegExp; weight: number }> = [
+  { regex: /\bdpi\b/i, weight: 700 },
+  { regex: /\botc[\s_-]*(short|total|ratio|percent|pct|share|volume|shares)\b/i, weight: 650 },
   { regex: /off[\s_-]*exchange.*(ratio|percent|pct|share)/i, weight: 600 },
   { regex: /dark[\s_-]*pool.*(ratio|percent|pct|share)/i, weight: 600 },
+  { regex: /\botc\b.*(ratio|percent|pct|share)/i, weight: 600 },
   { regex: /off[\s_-]*exchange.*(volume|shares|amount|notional)/i, weight: 500 },
   { regex: /dark[\s_-]*pool.*(volume|shares|amount|notional)/i, weight: 500 },
+  { regex: /\botc\b.*(volume|shares|amount|notional|short|total)/i, weight: 500 },
   { regex: /(off[\s_-]*exchange|dark[\s_-]*pool)/i, weight: 400 },
+  { regex: /\botc\b/i, weight: 350 },
   { regex: /(volume|shares|amount|notional|value|ratio|percent|pct)/i, weight: 150 },
 ]
 

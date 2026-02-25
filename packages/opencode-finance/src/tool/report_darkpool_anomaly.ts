@@ -487,7 +487,9 @@ export const ReportDarkpoolAnomalyTool = Tool.define("report_darkpool_anomaly", 
           : await listPortfolio().then((items) => [...new Set(items.map((item) => normalizeTicker(item.ticker)).filter(Boolean))])
 
       if (tickers.length === 0) {
-        throw new Error("No holdings found. Add holdings with `/portfolio <ticker> <price_bought> <YYYY-MM-DD>` first.")
+        throw new Error(
+          "No holdings found for portfolio mode. Add holdings with `/portfolio <ticker> <price_bought> <YYYY-MM-DD>` or run ticker mode directly with `/financial-darkpool-anomaly <ticker>`.",
+        )
       }
 
       await ctx.ask({

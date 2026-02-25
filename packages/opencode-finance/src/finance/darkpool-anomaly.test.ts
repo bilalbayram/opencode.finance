@@ -3,6 +3,7 @@ import {
   analyzeTickerOffExchange,
   classifyAnomalyTransitions,
   normalizeThresholds,
+  parseOffExchangeDataset,
   toAnomalyRecord,
   type AnomalyRecord,
 } from "./darkpool-anomaly"
@@ -53,6 +54,18 @@ describe("analyzeTickerOffExchange", () => {
         thresholds: normalizeThresholds({ significance: 2.5 }),
       }),
     ).toThrow(/Insufficient off-exchange sample count/)
+  })
+
+  test("parses Quiver OTC schema and selects numeric metric", () => {
+    const input = [
+      { Ticker: "AAPL", Date: "2026-01-01", OTC_Short: 10, OTC_Total: 20, DPI: 0.5 },
+      { Ticker: "AAPL", Date: "2026-01-02", OTC_Short: 11, OTC_Total: 22, DPI: 0.5 },
+    ]
+    const parsed = parseOffExchangeDataset(input)
+
+    expect(parsed.date_key).toBe("Date")
+    expect(parsed.metric_key).toBe("DPI")
+    expect(parsed.observations.length).toBe(2)
   })
 })
 
