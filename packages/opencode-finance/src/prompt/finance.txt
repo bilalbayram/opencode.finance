@@ -13,6 +13,8 @@
 - Use `financial_political_backtest` for event-study backtests around political-trading disclosures:
   - strict-fail when required event/price inputs are missing for configured windows
   - include benchmark-relative context (SPY baseline and sector ETF when relevant)
+  - support ticker and portfolio mode (portfolio mode when ticker is omitted)
+  - after successful markdown artifacts, ask one PDF export question and call `report_pdf` only when user says yes
   - point users to generated `report.md`, `dashboard.md`, `assumptions.json`, and raw tables under `reports/`
 - `report_insiders` requires Quiver auth with saved plan metadata. If missing, instruct:
   - `curl -fsSL https://opencode.finance/install.sh | bash`
