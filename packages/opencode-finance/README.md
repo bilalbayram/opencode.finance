@@ -2,9 +2,21 @@
 
 Finance workflow plugin for OpenCode.
 
-## Enable in OpenCode
+## Quick install
 
-Add the plugin package in your OpenCode config:
+```bash
+curl -fsSL https://opencode.finance/install.sh | bash
+```
+
+The installer:
+- Installs OpenCode if missing.
+- Adds `opencode-finance` to your OpenCode config plugin list.
+- Prompts for finance credentials and writes them directly to OpenCode auth storage.
+- Installs or updates the `finance-comprehensive-report` skill at `~/.opencode/skills/finance-comprehensive-report/SKILL.md`.
+
+## Manual plugin enable (advanced)
+
+If you need manual setup, add the plugin package in your OpenCode config:
 
 ```json
 {
@@ -15,17 +27,7 @@ Add the plugin package in your OpenCode config:
 
 OpenCode installs npm plugins automatically on startup.
 
-## Auth providers
-
-```bash
-opencode auth login --provider alphavantage
-opencode auth login --provider finnhub
-opencode auth login --provider financial-modeling-prep
-opencode auth login --provider polygon
-opencode auth login --provider quartr
-opencode auth login --provider sec-edgar
-opencode auth login --provider quiver-quant
-```
+Finance credential setup is handled by `https://opencode.finance/install.sh`.
 
 If your OpenCode config uses `enabled_providers`, this plugin auto-includes its finance auth provider IDs at runtime so they remain visible in `opencode auth login`.
 
@@ -34,6 +36,8 @@ If your OpenCode config uses `enabled_providers`, this plugin auto-includes its 
 ## Commands and tools
 
 The plugin adds finance commands (`/quote`, `/metrics`, `/filings`, `/watch`, `/portfolio`, `/report-portfolio`, `/report-insiders`, `/market`, `/report`, `/onboard`) and tools (`financial_search`, `portfolio`, `portfolio_report`, `report_insiders`, `report_pdf`).
+
+`/report` is the comprehensive report workflow powered by the `finance-comprehensive-report` skill and mandatory `report_pdf` export after markdown artifacts.
 
 ## Migration helper
 

@@ -78,16 +78,12 @@ jobs:
         if: steps.determine.outputs.changed != 'true'
         run: echo "No plugin version change detected. Skipping release."
 
-      - name: Verify NPM token
+      - name: Setup Node for npm trusted publishing
         if: steps.determine.outputs.changed == 'true'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "NPM_TOKEN secret is required for publishing." >&2
-            exit 1
-          fi
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         if: steps.determine.outputs.changed == 'true'
@@ -102,8 +98,6 @@ jobs:
 
       - name: Publish to npm
         if: steps.determine.outputs.changed == 'true'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -117,9 +111,8 @@ jobs:
             exit 0
           fi
 
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "${HOME}/.npmrc"
           cd packages/opencode-finance
-          bun publish --access public --provenance
+          npm publish --access public --provenance
 
       - name: Ensure release tag exists
         if: steps.determine.outputs.changed == 'true'
