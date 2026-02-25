@@ -39,6 +39,8 @@ The plugin adds finance commands (`/quote`, `/metrics`, `/filings`, `/watch`, `/
 
 `/report` is the comprehensive report workflow powered by the `finance-comprehensive-report` skill and mandatory `report_pdf` export after markdown artifacts.
 
+`/report-pdf` requires an explicit profile mode: `report` or `darkpool-anomaly`.
+
 ## Migration helper
 
 For finance-fork users moving to OpenCode + plugin:
