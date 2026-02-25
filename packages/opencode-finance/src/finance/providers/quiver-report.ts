@@ -32,6 +32,7 @@ export type QuiverReportInput = {
   limit?: number
   timeoutMs?: number
   signal?: AbortSignal
+  enforceTierGate?: boolean
 }
 
 type Endpoint = {
@@ -209,7 +210,7 @@ function normalizeThrownError(error: unknown, timeoutMs: number): QuiverReportEr
 async function fetchDataset(def: Endpoint, input: QuiverReportInput): Promise<QuiverReportDataset> {
   const timestamp = new Date().toISOString()
   const source = buildUrl(def.endpoint, input, def.query?.(input)).toString()
-  if (!tierAllows(def.tier, input.tier)) {
+  if (input.enforceTierGate !== false && !tierAllows(def.tier, input.tier)) {
     return {
       id: def.id,
       label: def.label,

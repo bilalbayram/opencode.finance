@@ -12,7 +12,6 @@ import {
   endpointMinimumPlan,
   quiverPlanLabel,
   resolveQuiverTierFromAuth,
-  tierAllows,
   type QuiverTier,
 } from "../finance/quiver-tier"
 import * as QuiverReport from "../finance/providers/quiver-report"
@@ -304,11 +303,6 @@ async function resolveAuth() {
   }
 
   const tier = resolveQuiverTierFromAuth(auth)
-  if (!tierAllows("tier_1", tier.tier)) {
-    throw new Error(
-      `Quiver plan ${quiverPlanLabel(tier.tier)} does not include Tier 1 off-exchange datasets required by this analysis. Upgrade to Hobbyist (Tier 0 + Tier 1) or higher and rerun \`${LOGIN_HINT}\`.`,
-    )
-  }
 
   return {
     key,
@@ -326,6 +320,7 @@ async function fetchRequiredOffExchange(input: {
   const datasets = await QuiverReport.fetchTickerAlt({
     apiKey: input.apiKey,
     tier: input.tier,
+    enforceTierGate: false,
     ticker: input.ticker,
     limit: input.limit,
     signal: input.signal,
@@ -338,11 +333,16 @@ async function fetchRequiredOffExchange(input: {
 
   if (dataset.status === "not_attempted_due_to_tier") {
     throw new Error(
-      `Required dataset ${dataset.label} was not attempted for ${input.ticker}; minimum plan is ${endpointMinimumPlan(dataset.endpoint_tier)}.`,
+      `Required dataset ${dataset.label} was not attempted for ${input.ticker}; minimum plan is ${endpointMinimumPlan(dataset.endpoint_tier)}. Re-run ${LOGIN_HINT} to refresh stored plan metadata.`,
     )
   }
 
   if (dataset.status === "failed") {
+    if (dataset.error?.code === "TIER_DENIED") {
+      throw new Error(
+        `Required dataset ${dataset.label} is not available for ${input.ticker} with the currently active Quiver key. Confirm your Quiver account is Hobbyist (Tier 0 + Tier 1) or higher and re-run ${LOGIN_HINT}.`,
+      )
+    }
     throw new Error(
       `Required dataset ${dataset.label} failed for ${input.ticker}: ${dataset.error?.code ?? "NETWORK"} ${dataset.error?.message ?? "request failed"}`,
     )

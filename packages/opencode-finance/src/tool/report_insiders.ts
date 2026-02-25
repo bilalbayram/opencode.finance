@@ -10,9 +10,7 @@ import { listPortfolio } from "../finance/portfolio"
 import { normalizeTicker } from "../finance/parser"
 import {
   endpointMinimumPlan,
-  quiverPlanLabel,
   resolveQuiverTierFromAuth,
-  tierAllows,
   type QuiverTier,
 } from "../finance/quiver-tier"
 import * as QuiverReport from "../finance/providers/quiver-report"
@@ -300,11 +298,6 @@ async function resolveAuth() {
   }
 
   const tier = resolveQuiverTierFromAuth(auth)
-  if (!tierAllows("tier_1", tier.tier)) {
-    throw new Error(
-      `Quiver plan ${quiverPlanLabel(tier.tier)} does not include insider/government datasets required by this report. Upgrade to Hobbyist (Tier 0 + Tier 1) or higher and rerun \`${LOGIN_HINT}\`.`,
-    )
-  }
   return {
     key,
     tier: tier.tier,
@@ -452,6 +445,7 @@ export const ReportInsidersTool = Tool.define("report_insiders", async () => {
       const global = await QuiverReport.fetchGlobalGovTrading({
         apiKey: auth.key,
         tier: auth.tier,
+        enforceTierGate: false,
         limit,
         signal: ctx.abort,
       })
@@ -462,6 +456,7 @@ export const ReportInsidersTool = Tool.define("report_insiders", async () => {
             QuiverReport.fetchTickerGovTrading({
               apiKey: auth.key,
               tier: auth.tier,
+              enforceTierGate: false,
               ticker: symbol,
               limit,
               signal: ctx.abort,
@@ -469,6 +464,7 @@ export const ReportInsidersTool = Tool.define("report_insiders", async () => {
             QuiverReport.fetchTickerAlt({
               apiKey: auth.key,
               tier: auth.tier,
+              enforceTierGate: false,
               ticker: symbol,
               limit,
               signal: ctx.abort,
@@ -476,6 +472,7 @@ export const ReportInsidersTool = Tool.define("report_insiders", async () => {
             QuiverReport.fetchInsiders({
               apiKey: auth.key,
               tier: auth.tier,
+              enforceTierGate: false,
               ticker: symbol,
               limit,
               signal: ctx.abort,
