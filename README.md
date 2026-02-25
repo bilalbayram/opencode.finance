@@ -23,6 +23,20 @@ It will:
 
 When `enabled_providers` is set in OpenCode config, `opencode-finance` auto-includes its finance auth provider IDs at runtime so they appear in `opencode auth login`. Explicit `disabled_providers` entries still hide them.
 
+## Slash command: government trading
+
+Use `/financial-government-trading [ticker]` to generate strict government-trading delta artifacts from required Quiver datasets. Pass a ticker for ticker mode, or omit it for portfolio mode.
+
+The command writes these artifacts per run in `reports/government-trading/<mode>/<scope>/<run_id>/`:
+- `report.md`
+- `dashboard.md`
+- `assumptions.json`
+- `normalized-events.json`
+- `delta-events.json`
+- `data.json`
+
+After artifact generation, it asks once whether to export a polished PDF. Selecting `Yes (Recommended)` adds `government-trading-<run_id>.pdf` in the same output directory.
+
 ## Migration from a legacy fork
 
 If this used to be the full `opencode-finance` fork, run:
