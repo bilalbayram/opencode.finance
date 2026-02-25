@@ -1,8 +1,11 @@
 # AGENTS.md
 
 ## Project Scope
-- This repository is an **OpenCode plugin package repository** with runtime source in `packages/opencode-finance`.
+- This repository contains:
+- `packages/opencode-finance` as the OpenCode finance plugin package.
+- `packages/web` as the standalone marketing page package.
 - Plugin work is scoped to `packages/opencode-finance`.
+- Web marketing page work is scoped to `packages/web`.
 
 ## Tooling
 - Use **Bun** for dependency management, execution, and scripts.
@@ -15,6 +18,10 @@
   Build the plugin output.
 - `bun run --cwd packages/opencode-finance migrate`
   Run the finance migration helper for users moving from legacy forks.
+- `bun run --cwd packages/web dev`
+  Run the marketing page locally.
+- `bun run --cwd packages/web build`
+  Build the marketing page output.
 
 ## Coding Standards
 - TypeScript uses ESM and strict options from `packages/opencode-finance/tsconfig.json`.
@@ -32,4 +39,5 @@
 
 ## Release/Validation
 - Use `bun run --cwd packages/opencode-finance typecheck` before changes are considered complete.
+- Use `bun run --cwd packages/web build` before changes are considered complete when web files are touched.
 - Keep `AGENTS.md` and `README.md` aligned when changing plugin usage, setup, or auth requirements.

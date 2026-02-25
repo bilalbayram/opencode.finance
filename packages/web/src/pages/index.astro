@@ -1,0 +1,672 @@
+---
+const githubHref = "https://github.com/bilalbayram/opencode-finance"
+const reports = [
+  {
+    ticker: "AAPL",
+    date: "2026-02-14",
+    href: "/reports/AAPL-2026-02-14.pdf",
+    source: "reports/AAPL/2026-02-14/AAPL-2026-02-14.pdf",
+  },
+  {
+    ticker: "TSLA",
+    date: "2026-02-14",
+    href: "/reports/TSLA-2026-02-14.pdf",
+    source: "reports/TSLA/2026-02-14/TSLA-2026-02-14.pdf",
+  },
+  {
+    ticker: "LLY",
+    date: "2026-02-14",
+    href: "/reports/LLY-2026-02-14.pdf",
+    source: "reports/LLY/2026-02-14/LLY-2026-02-14.pdf",
+  },
+] as const
+
+const metrics = [
+  {
+    label: "Report shape",
+    value: "Deterministic",
+  },
+  {
+    label: "Primary output",
+    value: "PDF artifact",
+  },
+  {
+    label: "Review mode",
+    value: "Assumption-first",
+  },
+] as const
+
+const steps = [
+  "Prompt scope + ticker",
+  "Model synthesis + checks",
+  "Template lock + export",
+  "Delivery-ready PDF",
+] as const
+
+const points = [
+  {
+    title: "Rigid structure",
+    copy: "Every report uses the same information order, so teams can compare names without re-reading format noise.",
+  },
+  {
+    title: "Fast QA",
+    copy: "Assumptions and thesis points are exposed early, making analyst review a short pass instead of a rewrite.",
+  },
+  {
+    title: "Distribution clean",
+    copy: "Outputs are generated as polished PDFs suitable for internal packets or direct client delivery.",
+  },
+] as const
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opencode-finance | Marketing</title>
+    <meta
+      name="description"
+      content="A minimalist pipeline for repeatable equity research reports with deterministic output shape."
+    />
+  </head>
+  <body>
+    <main class="landing-shell">
+      <section class="hero" aria-labelledby="landing-title">
+        <div class="hero-main">
+          <p class="kicker">opencode-finance / workflow</p>
+          <h1 id="landing-title">Prompt in. Equity research out.</h1>
+          <p class="lede">
+            A minimalist pipeline for repeatable analyst reports. Keep thesis, assumptions, and output shape fixed while
+            moving from idea to publication in minutes.
+          </p>
+          <div class="actions">
+            <a class="button solid" href="#reports">See report previews</a>
+            <a
+              class="button ghost github"
+              href={githubHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="GitHub repository"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M12 2a10 10 0 0 0-3.16 19.49c.5.1.68-.22.68-.49l-.01-1.71c-2.78.61-3.37-1.18-3.37-1.18-.46-1.14-1.11-1.44-1.11-1.44-.91-.61.07-.6.07-.6 1 .07 1.53 1.02 1.53 1.02.9 1.51 2.36 1.08 2.93.83.09-.64.35-1.08.63-1.33-2.22-.25-4.56-1.1-4.56-4.86 0-1.07.39-1.95 1.02-2.64-.1-.25-.44-1.27.1-2.65 0 0 .84-.27 2.75 1.01A9.7 9.7 0 0 1 12 6.82c.86 0 1.74.12 2.55.35 1.91-1.28 2.75-1.01 2.75-1.01.54 1.38.2 2.4.1 2.65.63.69 1.02 1.57 1.02 2.64 0 3.77-2.34 4.61-4.57 4.86.36.3.67.88.67 1.79l-.01 2.65c0 .27.18.59.69.49A10 10 0 0 0 12 2Z"
+                ></path>
+              </svg>
+              <span>GitHub</span>
+            </a>
+          </div>
+          <p class="terminal" role="note">
+            Install + configure:
+            <code>curl -fsSL https://opencode.finance/install.sh | bash</code>
+          </p>
+          <dl class="metrics" aria-label="Workflow details">
+            {metrics.map((metric) => (
+              <div>
+                <dt>{metric.label}</dt>
+                <dd>{metric.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+
+        <aside class="hero-panel" aria-label="Pipeline blueprint">
+          <p class="panel-label">Pipeline</p>
+          <ol>
+            {steps.map((step) => (
+              <li>{step}</li>
+            ))}
+          </ol>
+        </aside>
+      </section>
+
+      <section class="benefits" aria-label="Key benefits">
+        {points.map((point) => (
+          <article>
+            <h2>{point.title}</h2>
+            <p>{point.copy}</p>
+          </article>
+        ))}
+      </section>
+
+      <section id="reports" class="reports" aria-labelledby="reports-title">
+        <header>
+          <p class="kicker">Sample reports</p>
+          <h2 id="reports-title">Live preview tiles</h2>
+          <p class="intro">
+            Current examples are sourced from the same report pipeline and rendered directly from the PDF artifacts.
+          </p>
+        </header>
+
+        <div class="reports-grid">
+          {reports.map((report) => (
+            <article class="report-card">
+              <div class="card-head">
+                <div>
+                  <h3>{report.ticker}</h3>
+                  <p>{report.date}</p>
+                </div>
+                <a href={report.href} target="_blank" rel="noopener noreferrer">Open PDF</a>
+              </div>
+              <p class="path">
+                Source: <code>{report.source}</code>
+              </p>
+              <div class="viewer">
+                <iframe
+                  title={`${report.ticker} ${report.date} report`}
+                  src={`${report.href}#toolbar=0&navpanes=0&view=FitH`}
+                  loading="lazy"
+                />
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
+
+<style>
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+:global(*) {
+  box-sizing: border-box;
+}
+
+:global(body) {
+  margin: 0;
+  min-height: 100vh;
+  background: #eceef1;
+  color: #111318;
+  font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.landing-shell {
+  --line: #c5cad2;
+  --bg: #f2f3f5;
+  --ink: #111318;
+  --muted: #5b6069;
+  --accent: #111318;
+  --focus: #6f7683;
+
+  margin: clamp(0.65rem, 1.5vw, 1.6rem);
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(to right, rgb(17 19 24 / 6%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(17 19 24 / 6%) 1px, transparent 1px),
+    radial-gradient(140% 110% at 100% 0%, rgb(0 0 0 / 10%) 0%, transparent 57%),
+    var(--bg);
+  background-size: 28px 28px, 28px 28px, auto, auto;
+  color: var(--ink);
+  overflow-x: clip;
+}
+
+.hero {
+  padding: clamp(1.1rem, 3.7vw, 3.1rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.hero-main,
+.hero-panel,
+.benefits article,
+.report-card {
+  animation: rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.hero-panel {
+  animation-delay: 120ms;
+}
+
+.benefits article {
+  animation-delay: 180ms;
+}
+
+.report-card {
+  animation-delay: 240ms;
+}
+
+.kicker {
+  margin: 0;
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.77rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hero-main h1 {
+  margin: 0.85rem 0 0;
+  max-width: 13ch;
+  font-size: clamp(2rem, 4.9vw, 3.9rem);
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  color: var(--accent);
+}
+
+.lede {
+  margin: 1rem 0 0;
+  max-width: 62ch;
+  line-height: 1.58;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.actions {
+  margin-top: 1.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.72rem 1rem;
+  border: 1px solid var(--accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: transform 170ms ease, background-color 170ms ease, color 170ms ease;
+}
+
+.button.solid {
+  background: #111318;
+  border-color: #111318;
+  color: #f5f6fa;
+}
+
+.button.ghost {
+  background: rgb(255 255 255 / 92%);
+  border-color: #111318;
+  color: #111318;
+}
+
+.terminal {
+  margin: 0.95rem 0 0.25rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px dashed rgb(17 19 24 / 55%);
+  background: rgb(255 255 255 / 80%);
+  color: var(--ink);
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.78rem;
+  white-space: normal;
+}
+
+.terminal code {
+  display: inline-block;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+.button.github {
+  gap: 0.45rem;
+}
+
+.button.github svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+}
+
+.button:focus-visible,
+.card-head a:focus-visible {
+  outline: 3px solid rgb(111 118 131 / 72%);
+  outline-offset: 2px;
+}
+
+.metrics {
+  margin: 1.35rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.metrics div {
+  border: 1px solid var(--line);
+  background: rgb(255 255 255 / 78%);
+  padding: 0.62rem 0.68rem;
+}
+
+.metrics dt {
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.71rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.metrics dd {
+  margin: 0.25rem 0 0;
+  font-size: 0.94rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.hero-panel {
+  border: 1px solid var(--line);
+  padding: 0.9rem;
+  background: rgb(255 255 255 / 82%);
+}
+
+.panel-label {
+  margin: 0;
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.74rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hero-panel ol {
+  margin: 0.8rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+  counter-reset: flow;
+}
+
+.hero-panel li {
+  counter-increment: flow;
+  border-top: 1px solid var(--line);
+  padding-top: 0.45rem;
+  font-size: 0.93rem;
+  line-height: 1.42;
+  color: var(--accent);
+}
+
+.hero-panel li::before {
+  content: "0" counter(flow) "  ";
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  color: var(--muted);
+}
+
+.benefits {
+  padding: 0.85rem clamp(1.1rem, 3.7vw, 3.1rem);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.benefits article {
+  border: 1px solid var(--line);
+  padding: 0.85rem;
+  background: rgb(255 255 255 / 78%);
+}
+
+.benefits h2 {
+  margin: 0;
+  font-size: 1.02rem;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+}
+
+.benefits p {
+  margin: 0.52rem 0 0;
+  font-size: 0.92rem;
+  line-height: 1.54;
+  color: var(--muted);
+}
+
+.reports {
+  padding: clamp(1.1rem, 3.7vw, 3.1rem);
+}
+
+.reports h2 {
+  margin: 0.25rem 0 0;
+  font-size: clamp(1.45rem, 3vw, 2.3rem);
+  letter-spacing: -0.02em;
+  color: var(--accent);
+}
+
+.intro {
+  margin: 0.7rem 0 0;
+  max-width: 70ch;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.reports-grid {
+  margin-top: 1.2rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.report-card {
+  border: 1px solid var(--line);
+  background: rgb(255 255 255 / 84%);
+  padding: 0.9rem;
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.card-head h3 {
+  margin: 0;
+  font-size: 1.22rem;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+}
+
+.card-head p {
+  margin: 0.2rem 0 0;
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.76rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.card-head a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--accent);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  background: rgb(255 255 255 / 88%);
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+
+.card-head a:hover {
+  transform: translateY(-1px);
+  background: rgb(235 238 242);
+}
+
+.path {
+  margin: 0.74rem 0;
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.path code {
+  color: var(--accent);
+}
+
+.viewer {
+  border: 1px solid var(--line);
+  background: #f8f9fb;
+  min-height: 24rem;
+  overflow: hidden;
+}
+
+.viewer iframe {
+  width: 100%;
+  min-height: 24rem;
+  border: 0;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 74rem) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .benefits {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 62rem) {
+  .reports-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .viewer,
+  .viewer iframe {
+    min-height: 20rem;
+  }
+}
+
+@media (max-width: 36rem) {
+  .landing-shell {
+    margin: 0.35rem;
+  }
+
+  .hero,
+  .benefits,
+  .reports {
+    padding: 0.95rem;
+  }
+
+  .hero-main h1 {
+    font-size: clamp(1.7rem, 11.5vw, 2.5rem);
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .button {
+    width: 100%;
+    text-align: center;
+  }
+
+  .terminal {
+    align-items: flex-start;
+    gap: 0.45rem;
+  }
+
+  .terminal code {
+    display: block;
+    width: 100%;
+  }
+
+  .card-head {
+    flex-direction: column;
+  }
+
+  .viewer,
+  .viewer iframe {
+    min-height: 17rem;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(body) {
+    background: #101317;
+    color: #f2f4f8;
+  }
+
+  .landing-shell {
+    --line: #434954;
+    --bg: #0f1115;
+    --ink: #f2f4f8;
+    --muted: #a8adb8;
+    --accent: #f2f4f8;
+    --focus: #bfc4cf;
+
+    background:
+      linear-gradient(to right, rgb(255 255 255 / 7%) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 7%) 1px, transparent 1px),
+      radial-gradient(140% 110% at 100% 0%, rgb(255 255 255 / 10%) 0%, transparent 58%),
+      var(--bg);
+    background-size: 28px 28px, 28px 28px, auto, auto;
+  }
+
+  .button.solid {
+    color: #0f1115;
+    background: #f3f4f6;
+    border-color: #f3f4f6;
+  }
+
+  .button.ghost,
+  .metrics div,
+  .hero-panel,
+  .benefits article,
+  .report-card,
+  .card-head a {
+    background: rgb(26 29 35 / 86%);
+  }
+
+  .button.ghost,
+  .card-head a {
+    border-color: rgb(255 255 255 / 55%);
+    color: #f2f4f8;
+  }
+
+  .viewer {
+    background: #101318;
+  }
+
+  .path code {
+    color: #f2f4f8;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-main,
+  .hero-panel,
+  .benefits article,
+  .report-card,
+  .button,
+  .card-head a {
+    animation: none;
+    transition: none;
+  }
+}
+</style>
