@@ -39,14 +39,7 @@ const THEME = {
   monoBg: hex("#EEF3F8"),
 }
 
-const subcommandSchema = z
-  .string()
-  .trim()
-  .min(1, `subcommand is required. Use one of: ${PDF_SUBCOMMAND_LABEL}`)
-  .refine((value): value is PdfSubcommand => PDF_SUBCOMMAND_SET.has(value), {
-    message: `subcommand must be one of: ${PDF_SUBCOMMAND_LABEL}`,
-  })
-  .transform((value) => value as PdfSubcommand)
+const subcommandSchema = z.string(`subcommand is required. Use one of: ${PDF_SUBCOMMAND_LABEL}`)
 
 const parameters = z.object({
   subcommand: subcommandSchema.describe("Workflow profile for quality gates and artifact requirements."),
