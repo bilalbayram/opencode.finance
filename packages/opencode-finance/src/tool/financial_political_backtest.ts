@@ -7,6 +7,7 @@ import { Auth } from "../auth"
 import { Env } from "../env"
 import { FINANCE_AUTH_PROVIDER } from "../finance/auth-provider"
 import { normalizeTicker } from "../finance/parser"
+import { listPortfolio } from "../finance/portfolio"
 import {
   endpointMinimumPlan,
   quiverPlanLabel,
@@ -20,6 +21,9 @@ import {
   compareRuns,
   discoverHistoricalRuns,
   EventStudyError,
+  computeBenchmarkRelativeReturns,
+  computeEventWindowReturns,
+  aggregateByWindow,
   normalizePoliticalEvents,
   resolveAnchors,
   selectBenchmarks,
@@ -40,7 +44,7 @@ const DEFAULT_WINDOWS = [5]
 const DEFAULT_ALIGNMENT: NonTradingAlignment = "next_session"
 
 const parameters = z.object({
-  ticker: z.string().describe("Ticker symbol for backtest mode, for example AAPL."),
+  ticker: z.string().optional().describe("Optional ticker symbol. Omit for portfolio mode."),
   anchor: z
     .enum(["transaction", "report", "both"])
     .optional()
@@ -49,15 +53,16 @@ const parameters = z.object({
   benchmark_mode: z
     .enum(["spy_only", "spy_plus_sector_if_relevant", "spy_plus_sector_required"])
     .optional()
-    .describe("Benchmark policy. Defaults to spy_only for tracer bullet mode."),
+    .describe("Benchmark policy. Defaults to spy_plus_sector_if_relevant."),
   output_root: z.string().optional().describe("Optional report output directory override."),
   limit: z.number().int().min(1).max(200).optional().describe("Rows limit per dataset (default: 100)."),
   refresh: z.boolean().optional().describe("Reserved for compatibility; datasets are fetched live."),
 })
 
 type BacktestMetadata = {
-  mode: "ticker"
-  ticker: string
+  mode: "ticker" | "portfolio"
+  ticker?: string
+  tickers: string[]
   anchor_mode: EventAnchorMode
   windows: number[]
   benchmark_mode: BenchmarkMode
@@ -85,9 +90,14 @@ function projectRoot(context: Pick<Tool.Context, "directory" | "worktree">) {
   return context.worktree === "/" ? context.directory : context.worktree
 }
 
-function defaultOutputRoot(context: Pick<Tool.Context, "directory" | "worktree">, ticker: string) {
+function defaultOutputRoot(input: {
+  context: Pick<Tool.Context, "directory" | "worktree">
+  mode: "ticker" | "portfolio"
+  ticker?: string
+}) {
   const date = new Date().toISOString().slice(0, 10)
-  return path.join(projectRoot(context), "reports", ticker, date)
+  if (input.mode === "portfolio") return path.join(projectRoot(input.context), "reports", "portfolio", date)
+  return path.join(projectRoot(input.context), "reports", input.ticker!, date)
 }
 
 function asText(input: unknown) {
@@ -242,6 +252,14 @@ function assertDatasetsComplete(datasets: QuiverReport.QuiverReportDataset[]) {
   }
 }
 
+function portfolioTickersFromHoldings(holdings: Array<{ ticker: string }>) {
+  const tickers = [...new Set(holdings.map((item) => normalizeTicker(item.ticker)).filter(Boolean))]
+  if (tickers.length === 0) {
+    throw new Error("No holdings found. Add holdings with `/portfolio <ticker> <price_bought> <YYYY-MM-DD>` first.")
+  }
+  return tickers
+}
+
 function marketDateBounds(input: {
   anchors: ReturnType<typeof resolveAnchors>
   windows: number[]
@@ -261,7 +279,8 @@ function marketDateBounds(input: {
 }
 
 function toReport(input: {
-  ticker: string
+  mode: "ticker" | "portfolio"
+  tickers: string[]
   anchorMode: EventAnchorMode
   windows: number[]
   benchmarkMode: BenchmarkMode
@@ -273,12 +292,13 @@ function toReport(input: {
   comparison: BacktestRunComparison
   warnings: string[]
 }) {
+  const scope = input.mode === "portfolio" ? "PORTFOLIO" : input.tickers[0]!
   const lines = [
-    `# Political Event Backtest: ${input.ticker}`,
+    `# Political Event Backtest: ${scope}`,
     "",
     `Generated at: ${input.generatedAt}`,
-    `Ticker: ${input.ticker}`,
-    `Mode: ticker`,
+    `Mode: ${input.mode}`,
+    `Tickers: ${input.tickers.join(", ")}`,
     `Anchor Mode: ${input.anchorMode}`,
     `Windows (sessions): ${input.windows.join(", ")}`,
     `Benchmark Mode: ${input.benchmarkMode}`,
@@ -331,15 +351,19 @@ function toReport(input: {
 }
 
 function toDashboard(input: {
-  ticker: string
+  mode: "ticker" | "portfolio"
+  tickers: string[]
   events: number
   benchmarks: string[]
   aggregates: ReturnType<typeof runPoliticalEventStudyCore>["aggregates"]
   comparison: BacktestRunComparison
 }) {
+  const scope = input.mode === "portfolio" ? "PORTFOLIO" : input.tickers[0]!
   const lines = [
-    `# Political Backtest Dashboard: ${input.ticker}`,
+    `# Political Backtest Dashboard: ${scope}`,
     "",
+    `- Mode: ${input.mode}`,
+    `- Tickers: ${input.tickers.join(", ")}`,
     `- Events: ${input.events}`,
     `- Benchmarks: ${input.benchmarks.join(", ")}`,
     "",
@@ -468,9 +492,24 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
     description: DESCRIPTION,
     parameters,
     async execute(params, ctx) {
-      const ticker = normalizeTicker(params.ticker)
-      if (!ticker) {
-        throw new Error("ticker must include at least one valid symbol character")
+      const inputTicker = normalizeTicker(params.ticker ?? "")
+      const mode: "ticker" | "portfolio" = inputTicker ? "ticker" : "portfolio"
+      let tickers: string[] = []
+
+      if (mode === "ticker") {
+        tickers = [inputTicker]
+      } else {
+        await ctx.ask({
+          permission: "portfolio",
+          patterns: ["list", "report", "backtest"],
+          always: ["*"],
+          metadata: {
+            action: "financial_political_backtest",
+            mode: "portfolio",
+          },
+        })
+        const holdings = await listPortfolio()
+        tickers = portfolioTickersFromHoldings(holdings)
       }
 
       const auth = await resolveAuth()
@@ -483,11 +522,12 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
 
       await ctx.ask({
         permission: "financial_search",
-        patterns: [`${ticker} political trading`, `${ticker} market history`, "SPY market history"],
+        patterns: [...tickers.map((item) => `${item} political trading`), ...tickers.map((item) => `${item} market history`), "SPY market history"],
         always: ["*"],
         metadata: {
           source: "financial_political_backtest_tool",
-          ticker,
+          mode,
+          tickers,
           anchor_mode: anchorMode,
           windows,
           benchmark_mode: benchmarkMode,
@@ -496,39 +536,72 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
       })
 
       const limit = params.limit ?? 100
-      const datasets = await QuiverReport.fetchTickerGovTrading({
-        apiKey: auth.key,
-        tier: auth.tier,
-        ticker,
-        limit,
-        signal: ctx.abort,
-      })
-      assertDatasetsComplete(datasets)
-
-      const normalized = normalizePoliticalEvents({
-        ticker,
-        datasets: datasets.map((item) => ({
-          id: item.id,
-          rows: item.rows,
+      const datasetsByTicker = await Promise.all(
+        tickers.map(async (ticker) => ({
+          ticker,
+          datasets: await QuiverReport.fetchTickerGovTrading({
+            apiKey: auth.key,
+            tier: auth.tier,
+            ticker,
+            limit,
+            signal: ctx.abort,
+          }),
         })),
-      })
+      )
+      datasetsByTicker.forEach((item) => assertDatasetsComplete(item.datasets))
+
+      const normalizedByTicker = datasetsByTicker.map((item) => ({
+        ticker: item.ticker,
+        events: normalizePoliticalEvents({
+          ticker: item.ticker,
+          datasets: item.datasets.map((dataset) => ({
+            id: dataset.id,
+            rows: dataset.rows,
+          })),
+        }),
+      }))
+      const normalized = normalizedByTicker.flatMap((item) => item.events)
+
       const anchors = resolveAnchors(normalized, anchorMode)
       const bounds = marketDateBounds({
         anchors,
         windows,
       })
 
-      const sector = await fetchSector({
-        ticker,
-        signal: ctx.abort,
-      })
+      const sectorsByTicker = (
+        await Promise.all(
+          tickers.map(async (ticker) => {
+            const sector = await fetchSector({
+              ticker,
+              signal: ctx.abort,
+            })
+            return [ticker, sector] as const
+          }),
+        )
+      ).reduce(
+        (acc, [ticker, sector]) => {
+          acc[ticker] = sector
+          return acc
+        },
+        {} as Record<string, string | null>,
+      )
 
-      const benchmarkSelection = selectBenchmarks({
-        sector,
-        mode: benchmarkMode,
-      })
+      let benchmarkSymbols = new Set<string>(["SPY"])
+      const benchmarkRationale: string[] = []
+      if (benchmarkMode === "spy_only") {
+        benchmarkRationale.push("SPY baseline included for all runs. Sector benchmark disabled by benchmark mode.")
+      } else {
+        for (const ticker of tickers) {
+          const selected = selectBenchmarks({
+            sector: sectorsByTicker[ticker] ?? null,
+            mode: benchmarkMode,
+          })
+          selected.symbols.forEach((symbol) => benchmarkSymbols.add(symbol))
+          benchmarkRationale.push(`${ticker}: ${selected.rationale.join(" ")}`)
+        }
+      }
 
-      const requiredSymbols = [...new Set([ticker, ...benchmarkSelection.symbols])]
+      const requiredSymbols = [...new Set([...tickers, ...benchmarkSymbols])]
       const priceBySymbol = (
         await Promise.all(
           requiredSymbols.map(async (symbol) => {
@@ -549,21 +622,54 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         {} as Record<string, PriceBar[]>,
       )
 
-      const core = runPoliticalEventStudyCore({
-        events: normalized,
-        anchor_mode: anchorMode,
-        windows,
-        alignment: DEFAULT_ALIGNMENT,
-        benchmark_mode: benchmarkMode,
-        sector,
-        price_by_symbol: priceBySymbol,
-      })
+      const core =
+        mode === "ticker"
+          ? runPoliticalEventStudyCore({
+              events: normalized,
+              anchor_mode: anchorMode,
+              windows,
+              alignment: DEFAULT_ALIGNMENT,
+              benchmark_mode: benchmarkMode,
+              sector: sectorsByTicker[tickers[0]!] ?? null,
+              price_by_symbol: priceBySymbol,
+            })
+          : (() => {
+              const eventWindowReturns = computeEventWindowReturns({
+                events: normalized,
+                anchor_mode: anchorMode,
+                windows,
+                alignment: DEFAULT_ALIGNMENT,
+                price_by_symbol: priceBySymbol,
+              })
+              const benchmarkRelativeReturns = computeBenchmarkRelativeReturns({
+                base: eventWindowReturns,
+                benchmark_symbols: [...benchmarkSymbols],
+                alignment: DEFAULT_ALIGNMENT,
+                price_by_symbol: priceBySymbol,
+              })
+              return {
+                event_window_returns: eventWindowReturns,
+                benchmark_relative_returns: benchmarkRelativeReturns,
+                aggregates: aggregateByWindow(benchmarkRelativeReturns),
+                benchmark_selection: {
+                  symbols: [...benchmarkSymbols],
+                  rationale: benchmarkRationale,
+                  sector: null,
+                  sector_etf: null,
+                },
+              }
+            })()
 
+      const scopeKey = mode === "ticker" ? tickers[0]! : "portfolio"
       const outputRoot = params.output_root
         ? path.isAbsolute(params.output_root)
           ? path.normalize(params.output_root)
           : path.resolve(ctx.directory, params.output_root)
-        : defaultOutputRoot(ctx, ticker)
+        : defaultOutputRoot({
+            context: ctx,
+            mode,
+            ticker: tickers[0],
+          })
 
       const generatedAt = new Date().toISOString()
       const currentSnapshot: BacktestRunSnapshot = {
@@ -575,7 +681,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
       }
       const priorRuns = await discoverHistoricalRuns({
         reports_root: projectRoot(ctx),
-        ticker,
+        ticker: scopeKey,
         exclude_output_root: outputRoot,
       })
       const comparison = compareRuns({
@@ -591,23 +697,29 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
       const assumptions = {
         workflow: "financial_political_backtest",
         generated_at: generatedAt,
-        mode: "ticker",
-        ticker,
+        mode,
+        scope_key: scopeKey,
+        ticker: mode === "ticker" ? tickers[0] : undefined,
+        tickers,
         anchor_mode: anchorMode,
         windows,
         alignment_policy: DEFAULT_ALIGNMENT,
         benchmark_mode: benchmarkMode,
         benchmark_selection: core.benchmark_selection,
+        sectors_by_ticker: sectorsByTicker,
         quiver: {
           tier: auth.tier,
           inferred: auth.inferred,
           warning: auth.warning,
-          datasets: datasets.map((item) => ({
-            id: item.id,
-            label: item.label,
-            source_url: item.source_url,
-            rows: item.rows.length,
-            status: item.status,
+          datasets_by_ticker: datasetsByTicker.map((item) => ({
+            ticker: item.ticker,
+            datasets: item.datasets.map((dataset) => ({
+              id: dataset.id,
+              label: dataset.label,
+              source_url: dataset.source_url,
+              rows: dataset.rows.length,
+              status: dataset.status,
+            })),
           })),
         },
         market_history: {
@@ -628,7 +740,8 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
       }
 
       const report = toReport({
-        ticker,
+        mode,
+        tickers,
         anchorMode,
         windows,
         benchmarkMode,
@@ -642,7 +755,8 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
       })
 
       const dashboard = toDashboard({
-        ticker,
+        mode,
+        tickers,
         events: normalized.length,
         benchmarks: core.benchmark_selection.symbols,
         aggregates: core.aggregates,
@@ -663,8 +777,9 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
       })
 
       const metadata: BacktestMetadata = {
-        mode: "ticker",
-        ticker,
+        mode,
+        ticker: mode === "ticker" ? tickers[0] : undefined,
+        tickers,
         anchor_mode: anchorMode,
         windows,
         benchmark_mode: benchmarkMode,
@@ -678,13 +793,15 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
       }
 
       return {
-        title: `financial_political_backtest: ${ticker}`,
+        title: mode === "ticker" ? `financial_political_backtest: ${tickers[0]}` : `financial_political_backtest: portfolio (${tickers.length})`,
         metadata,
         output: JSON.stringify(
           {
             generated_at: generatedAt,
-            mode: "ticker",
-            ticker,
+            mode,
+            scope_key: scopeKey,
+            ticker: mode === "ticker" ? tickers[0] : undefined,
+            tickers,
             events: normalized.length,
             aggregate_rows: core.aggregates.length,
             artifacts: {
@@ -712,6 +829,7 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
 export const FinancialPoliticalBacktestInternal = {
   resolveAuthFromState,
   assertDatasetsComplete,
+  portfolioTickersFromHoldings,
   parseChartBars,
   fetchYahooDailyBars,
   marketDateBounds,
