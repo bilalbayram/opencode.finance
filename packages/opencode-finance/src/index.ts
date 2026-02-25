@@ -9,6 +9,7 @@ import { FinancialSearchTool } from "./tool/financial_search"
 import { PortfolioTool } from "./tool/portfolio"
 import { PortfolioReportTool } from "./tool/portfolio_report"
 import { ReportInsidersTool } from "./tool/report_insiders"
+import { ReportGovernmentTradingTool } from "./tool/report_government_trading"
 import { ReportPdfTool } from "./tool/report_pdf"
 import { Env } from "./env"
 import PROMPT_FINANCE from "./prompt/finance.txt"
@@ -108,7 +109,14 @@ async function ensureSkill(context: { directory: string; worktree: string }) {
 }
 
 async function buildTools() {
-  const list = [FinancialSearchTool, PortfolioTool, PortfolioReportTool, ReportInsidersTool, ReportPdfTool]
+  const list = [
+    FinancialSearchTool,
+    PortfolioTool,
+    PortfolioReportTool,
+    ReportInsidersTool,
+    ReportGovernmentTradingTool,
+    ReportPdfTool,
+  ]
   const out: Hooks["tool"] = {}
   for (const item of list) {
     const init = await item.init()
