@@ -69,4 +69,25 @@ describe("computeGovernmentTradingDelta", () => {
     expect(delta.updatedEvents[0]?.changedFields).toEqual(["amount"])
     expect(delta.noLongerPresentEvents[0]?.identityFields.ticker).toBe("NVDA")
   })
+
+  it("keeps requested_ticker rows distinct to avoid duplicate identity collisions", () => {
+    const sameShapeAapl = event({
+      requested_ticker: "AAPL",
+      date: "2025-01-10",
+      representative: "Jane Doe",
+      transaction_type: "purchase",
+      amount: 1000,
+    })
+    const sameShapeMsft = event({
+      requested_ticker: "MSFT",
+      date: "2025-01-10",
+      representative: "Jane Doe",
+      transaction_type: "purchase",
+      amount: 1000,
+    })
+
+    const delta = computeGovernmentTradingDelta([sameShapeAapl, sameShapeMsft], [])
+    expect(delta.newEvents).toHaveLength(2)
+    expect(delta.newEvents.map((item) => item.identityFields.ticker)).toEqual(["AAPL", "MSFT"])
+  })
 })

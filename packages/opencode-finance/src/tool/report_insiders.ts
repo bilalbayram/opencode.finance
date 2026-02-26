@@ -10,11 +10,6 @@ import { listPortfolio } from "../finance/portfolio"
 import { normalizeTicker } from "../finance/parser"
 import { resolveStrictQuiverAuth } from "../finance/quiver-auth"
 import { endpointMinimumPlan, type QuiverTier } from "../finance/quiver-tier"
-import {
-  endpointMinimumPlan,
-  resolveQuiverTierFromAuth,
-  type QuiverTier,
-} from "../finance/quiver-tier"
 import * as QuiverReport from "../finance/providers/quiver-report"
 import { assertExternalDirectory } from "./external-directory"
 
@@ -294,25 +289,6 @@ async function resolveAuth() {
     requiredEndpointTier: "tier_1",
     capabilityLabel: "Tier 1 insider/government datasets required by this report",
   })
-  if (!auth || auth.type !== "api") {
-    if (env) {
-      throw new Error(`Quiver plan metadata is missing. Run \`${LOGIN_HINT}\` to store key + plan.`)
-    }
-    throw new Error(`Quiver Quant is required for this report. Run \`${LOGIN_HINT}\`.`)
-  }
-
-  const key = env ?? auth.key
-  if (!key?.trim()) {
-    throw new Error(`Quiver Quant API key is missing. Run \`${LOGIN_HINT}\`.`)
-  }
-
-  const tier = resolveQuiverTierFromAuth(auth)
-  return {
-    key,
-    tier: tier.tier,
-    inferred: tier.inferred,
-    warning: tier.warning,
-  }
 }
 
 function defaultRoot(

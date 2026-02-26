@@ -15,7 +15,7 @@ const IDENTITY_FIELD_ALIASES = {
     "trader",
     "lobbyist",
   ],
-  ticker: ["ticker", "symbol", "security", "company_ticker", "stock", "asset"],
+  ticker: ["ticker", "symbol", "security", "company_ticker", "requested_ticker", "stock", "asset"],
   transaction_date: [
     "date",
     "transaction_date",
