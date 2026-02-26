@@ -53,6 +53,7 @@ type FontSet = {
 }
 
 type Tone = "positive" | "risk" | "neutral"
+type ReportProfile = "equity" | "government_trading"
 
 type Metric = {
   label: string
@@ -136,10 +137,19 @@ export const ReportPdfTool = Tool.define("report_pdf", {
     const reportText = await readRequired(report)
     const dashboardText = await readOptional(dashboard)
     const assumptionsText = await readOptional(assumptions)
+    const profile = detectReportProfile(reportText, dashboardText)
 
     let info = coverData(reportText, dashboardText, root)
-    info = await enrichCover(info, ctx)
-    const quality = qualityIssues(info, reportText, dashboardText, assumptionsText)
+    if (profile === "equity") {
+      info = await enrichCover(info, ctx)
+    }
+    const quality = qualityIssues({
+      profile,
+      info,
+      report: reportText,
+      dashboard: dashboardText,
+      assumptions: assumptionsText,
+    })
     if (quality.length) {
       throw new Error(
         ["PDF export blocked by institutional quality gate:", ...quality.map((item) => `- ${item}`)].join("\n"),
@@ -440,7 +450,66 @@ function cell(input: string) {
   return cleanInline(input).replace(/\|/g, "\\|").replace(/\n/g, "<br/>")
 }
 
-function qualityIssues(info: Cover, report: string, dashboard: string | undefined, assumptions: string | undefined) {
+function detectReportProfile(report: string, dashboard: string | undefined): ReportProfile {
+  const hasGovernmentReportHeading = /^#\s+government trading report\b/im.test(report)
+  const hasGovernmentDashboardHeading = /^#\s+government trading dashboard\b/im.test(dashboard ?? "")
+  return hasGovernmentReportHeading || hasGovernmentDashboardHeading ? "government_trading" : "equity"
+}
+
+function qualityIssues(input: {
+  profile: ReportProfile
+  info: Cover
+  report: string
+  dashboard: string | undefined
+  assumptions: string | undefined
+}) {
+  if (input.profile === "government_trading") {
+    return governmentTradingQualityIssues(input.report, input.dashboard)
+  }
+  return equityQualityIssues(input.info, input.report, input.dashboard, input.assumptions)
+}
+
+function governmentTradingQualityIssues(report: string, dashboard: string | undefined) {
+  const issues: string[] = []
+  if (!/^#\s+government trading report\b/im.test(report)) {
+    issues.push("Government-trading PDF export requires `report.md` to start with `# Government Trading Report`.")
+  }
+
+  if (!dashboard) {
+    issues.push("Government-trading PDF export requires `dashboard.md`.")
+    return issues
+  }
+
+  if (!/^#\s+government trading dashboard\b/im.test(dashboard)) {
+    issues.push("Government-trading PDF export requires `dashboard.md` to start with `# Government Trading Dashboard`.")
+  }
+
+  const requiredRunMetadataKeys = ["mode", "scope", "generated_at", "run_id"] as const
+  for (const key of requiredRunMetadataKeys) {
+    const matcher = new RegExp(`^-\\s*${key}\\s*:`, "im")
+    if (!matcher.test(report)) {
+      issues.push(`Government-trading report metadata is missing \`${key}\` in \`report.md\`.`)
+    }
+  }
+
+  const requiredDeltaMetrics = [
+    "current_events",
+    "new_events",
+    "updated_events",
+    "unchanged_events",
+    "no_longer_present_events",
+  ] as const
+  for (const metric of requiredDeltaMetrics) {
+    const matcher = new RegExp(`\\|\\s*${metric}\\s*\\|`, "i")
+    if (!matcher.test(dashboard)) {
+      issues.push(`Government-trading dashboard is missing delta metric \`${metric}\` in \`dashboard.md\`.`)
+    }
+  }
+
+  return issues
+}
+
+function equityQualityIssues(info: Cover, report: string, dashboard: string | undefined, assumptions: string | undefined) {
   const issues: string[] = []
   const critical = ["Stock Price", "YTD Return", "52W Range", "Analyst Consensus"]
   critical.forEach((label) => {

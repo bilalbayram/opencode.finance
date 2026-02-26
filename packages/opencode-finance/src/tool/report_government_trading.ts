@@ -12,6 +12,7 @@ import { computeGovernmentTradingDelta } from "../finance/government-trading/del
 import { loadGovernmentTradingHistory } from "../finance/government-trading/history"
 import { normalizeGovernmentTradingEvents } from "../finance/government-trading/normalize"
 import { renderGovernmentTradingArtifacts } from "../finance/government-trading/renderer"
+import { collectGovernmentTradingSourceRows } from "../finance/government-trading/source-rows"
 import type { GovernmentTradingHistoryRun, GovernmentTradingNormalizedEvent } from "../finance/government-trading/types"
 import {
   quiverPlanLabel,
@@ -118,6 +119,14 @@ function createRunId(generatedAt: string) {
   return `${date}__${time}`
 }
 
+function clampLimit(input: number) {
+  if (!Number.isFinite(input)) return 50
+  const value = Math.floor(input)
+  if (value < 1) return 1
+  if (value > 200) return 200
+  return value
+}
+
 function escapeCell(value: string) {
   return value.replace(/\|/g, "\\|")
 }
@@ -198,47 +207,6 @@ function assertRequiredDatasets(input: {
       `Required ${input.scope} dataset ${dataset.id} was not attempted due to plan tier. Upgrade Quiver Quant to Hobbyist (Tier 0 + Tier 1) or higher and rerun ${LOGIN_HINT}.`,
     )
   }
-}
-
-function normalizeSourceRows(input: {
-  globalDatasets: QuiverReport.QuiverReportDataset[]
-  tickerDatasets: Array<{ ticker: string; datasets: QuiverReport.QuiverReportDataset[] }>
-}) {
-  const rows: Array<{
-    datasetId: string
-    datasetLabel: string
-    row: Record<string, unknown>
-    rowIndex: number
-  }> = []
-
-  for (const dataset of input.globalDatasets) {
-    dataset.rows.forEach((row, rowIndex) => {
-      rows.push({
-        datasetId: dataset.id,
-        datasetLabel: dataset.label,
-        row,
-        rowIndex,
-      })
-    })
-  }
-
-  for (const tickerItem of input.tickerDatasets) {
-    for (const dataset of tickerItem.datasets) {
-      dataset.rows.forEach((row, rowIndex) => {
-        rows.push({
-          datasetId: dataset.id,
-          datasetLabel: `${dataset.label} (${tickerItem.ticker})`,
-          row: {
-            requested_ticker: tickerItem.ticker,
-            ...row,
-          },
-          rowIndex,
-        })
-      })
-    }
-  }
-
-  return rows
 }
 
 function buildPersistenceTrends(input: {
@@ -591,7 +559,8 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
       }
 
       const scope = normalizeScope(mode, ticker, tickers)
-      const limit = params.limit ?? 50
+      const limitRequested = params.limit ?? 50
+      const limitEffective = clampLimit(limitRequested)
       const generatedAt = new Date().toISOString()
       const runId = createRunId(generatedAt)
 
@@ -616,7 +585,7 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
           mode,
           scope,
           refresh: params.refresh,
-          limit,
+          limit: limitEffective,
         },
       })
 
@@ -624,7 +593,7 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
         QuiverReport.fetchGlobalGovTrading({
           apiKey: auth.key,
           tier: auth.tier,
-          limit,
+          limit: limitEffective,
           signal: ctx.abort,
         }),
         Promise.all(
@@ -634,7 +603,7 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
               apiKey: auth.key,
               tier: auth.tier,
               ticker: symbol,
-              limit,
+              limit: limitEffective,
               signal: ctx.abort,
             }),
           })),
@@ -654,9 +623,10 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
         })
       })
 
-      const normalizedInputRows = normalizeSourceRows({
+      const normalizedInputRows = collectGovernmentTradingSourceRows({
         globalDatasets,
         tickerDatasets,
+        limitPerDataset: limitEffective,
       })
       const normalizedEvents = normalizeGovernmentTradingEvents(normalizedInputRows)
 
@@ -693,8 +663,8 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
           global: REQUIRED_GLOBAL_IDS,
           ticker: REQUIRED_TICKER_IDS,
         },
-        limit_requested: limit,
-        limit_effective: Math.max(1, Math.min(100, limit)),
+        limit_requested: limitRequested,
+        limit_effective: limitEffective,
         refresh: params.refresh ?? false,
         output_root: outputBase,
       }
@@ -769,7 +739,7 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
           warning: auth.warning,
         },
         request: {
-          limit_requested: limit,
+          limit_requested: limitRequested,
           limit_effective: assumptions.limit_effective,
           refresh: params.refresh ?? false,
         },
