@@ -86,8 +86,15 @@ type BacktestArtifactPaths = {
   comparisonPath: string
 }
 
+const BACKTEST_WORKFLOW_DIR = "political-backtest"
+
 function projectRoot(context: Pick<Tool.Context, "directory" | "worktree">) {
   return context.worktree === "/" ? context.directory : context.worktree
+}
+
+function scopeLabel(input: { mode: "ticker" | "portfolio"; ticker?: string }) {
+  if (input.mode === "portfolio") return "portfolio"
+  return input.ticker!
 }
 
 function defaultOutputRoot(input: {
@@ -96,8 +103,7 @@ function defaultOutputRoot(input: {
   ticker?: string
 }) {
   const date = new Date().toISOString().slice(0, 10)
-  if (input.mode === "portfolio") return path.join(projectRoot(input.context), "reports", "portfolio", date)
-  return path.join(projectRoot(input.context), "reports", input.ticker!, date)
+  return path.join(projectRoot(input.context), "reports", BACKTEST_WORKFLOW_DIR, scopeLabel(input), date)
 }
 
 function asText(input: unknown) {
@@ -391,7 +397,7 @@ async function buildRunComparison(input: {
 }) {
   const priorRuns = await discoverHistoricalRuns({
     reports_root: input.reportsRoot,
-    ticker: input.scopeKey,
+    ticker: path.join(BACKTEST_WORKFLOW_DIR, input.scopeKey),
   })
   return compareRuns({
     current: input.currentSnapshot,
@@ -942,6 +948,7 @@ export const FinancialPoliticalBacktestInternal = {
   resolveAuthFromState,
   assertDatasetsComplete,
   portfolioTickersFromHoldings,
+  defaultOutputRoot,
   selectBenchmarksByTicker,
   computePortfolioBenchmarkRelativeRows,
   buildRunComparison,

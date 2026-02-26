@@ -297,7 +297,13 @@ export const OpenCodeFinancePlugin: Plugin = async (input) => {
         first && firstLower !== "portfolio" && /^[a-z0-9.\-]+$/i.test(first) && !first.includes(",") ? first.toUpperCase() : ""
       const mode = tickerCandidate ? "ticker" : "portfolio"
       const date = new Date().toISOString().slice(0, 10)
-      const scopeRoot = mode === "ticker" ? reportRoot(tickerCandidate, input, date) : path.join(root(input), "reports", "portfolio", date)
+      const scopeRoot = path.join(
+        root(input),
+        "reports",
+        "political-backtest",
+        mode === "ticker" ? tickerCandidate : "portfolio",
+        date,
+      )
 
       const quiver = await credential("quiver-quant")
       if (!quiver) {

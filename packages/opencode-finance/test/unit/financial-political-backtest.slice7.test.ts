@@ -5,6 +5,27 @@ import { describe, expect, test } from "bun:test"
 import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial_political_backtest"
 
 describe("financial_political_backtest slice 7", () => {
+  test("uses workflow-specific default output roots to avoid /report path collisions", () => {
+    const context = {
+      directory: "/tmp/project",
+      worktree: "/tmp/project",
+    }
+    const tickerRoot = FinancialPoliticalBacktestInternal.defaultOutputRoot({
+      context,
+      mode: "ticker",
+      ticker: "AAPL",
+    })
+    const portfolioRoot = FinancialPoliticalBacktestInternal.defaultOutputRoot({
+      context,
+      mode: "portfolio",
+    })
+
+    expect(tickerRoot).toContain("/reports/political-backtest/AAPL/")
+    expect(portfolioRoot).toContain("/reports/political-backtest/portfolio/")
+    expect(tickerRoot).not.toContain("/reports/AAPL/")
+    expect(portfolioRoot).not.toContain("/reports/portfolio/")
+  })
+
   test("does not mutate artifacts when edit permission is denied", async () => {
     const temp = await fs.mkdtemp(path.join(os.tmpdir(), "political-backtest-permission-"))
     const outputRoot = path.join(temp, "reports", "TEST", "2025-01-01")

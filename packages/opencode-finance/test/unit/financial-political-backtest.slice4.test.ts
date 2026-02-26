@@ -125,7 +125,7 @@ describe("financial_political_backtest slice 4", () => {
 
   test("includes same output root historical artifacts as comparison baseline", async () => {
     const temp = await fs.mkdtemp(path.join(os.tmpdir(), "political-backtest-same-root-"))
-    const runRoot = path.join(temp, "reports", "TEST", "2025-01-01")
+    const runRoot = path.join(temp, "reports", "political-backtest", "TEST", "2025-01-01")
     await fs.mkdir(runRoot, { recursive: true })
 
     await Bun.write(
