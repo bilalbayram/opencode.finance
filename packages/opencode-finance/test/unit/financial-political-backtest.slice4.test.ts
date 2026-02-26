@@ -8,6 +8,7 @@ import {
   type BacktestRunSnapshot,
   type AggregateWindow,
 } from "../../src/finance/political-backtest"
+import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial_political_backtest"
 
 function aggregate(input: Partial<AggregateWindow>): AggregateWindow {
   return {
@@ -118,6 +119,44 @@ describe("financial_political_backtest slice 4", () => {
     expect(runs).toHaveLength(1)
     expect(runs[0]?.output_root).toBe(runRoot)
     expect(runs[0]?.event_ids).toEqual(["e1"])
+
+    await fs.rm(temp, { recursive: true, force: true })
+  })
+
+  test("includes same output root historical artifacts as comparison baseline", async () => {
+    const temp = await fs.mkdtemp(path.join(os.tmpdir(), "political-backtest-same-root-"))
+    const runRoot = path.join(temp, "reports", "TEST", "2025-01-01")
+    await fs.mkdir(runRoot, { recursive: true })
+
+    await Bun.write(
+      path.join(runRoot, "assumptions.json"),
+      JSON.stringify(
+        {
+          workflow: "financial_political_backtest",
+          generated_at: "2025-01-01T00:00:00.000Z",
+        },
+        null,
+        2,
+      ),
+    )
+    await Bun.write(path.join(runRoot, "aggregate-results.json"), JSON.stringify([aggregate({ sample_size: 2 })], null, 2))
+    await Bun.write(path.join(runRoot, "events.json"), JSON.stringify([{ event_id: "e1" }, { event_id: "e2" }], null, 2))
+
+    const comparison = await FinancialPoliticalBacktestInternal.buildRunComparison({
+      reportsRoot: temp,
+      scopeKey: "TEST",
+      currentSnapshot: {
+        workflow: "financial_political_backtest",
+        output_root: runRoot,
+        generated_at: "2025-01-02T00:00:00.000Z",
+        aggregates: [aggregate({ sample_size: 3 })],
+        event_ids: ["e1", "e2", "e3"],
+      },
+    })
+
+    expect(comparison.first_run).toBe(false)
+    expect(comparison.baseline?.output_root).toBe(runRoot)
+    expect(comparison.event_sample.baseline).toBe(2)
 
     await fs.rm(temp, { recursive: true, force: true })
   })

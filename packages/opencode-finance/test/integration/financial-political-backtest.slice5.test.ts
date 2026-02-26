@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { EventStudyError, runPoliticalEventStudyCore, type PoliticalEvent, type PriceBar } from "../../src/finance/political-backtest"
+import {
+  EventStudyError,
+  computeEventWindowReturns,
+  runPoliticalEventStudyCore,
+  type PoliticalEvent,
+  type PriceBar,
+} from "../../src/finance/political-backtest"
 import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial_political_backtest"
 
 describe("financial_political_backtest slice 5", () => {
@@ -58,6 +64,142 @@ describe("financial_political_backtest slice 5", () => {
     expect(output.benchmark_relative_returns).toHaveLength(2)
     expect(output.aggregates).toHaveLength(1)
     expect(output.aggregates[0]?.sample_size).toBe(2)
+  })
+
+  test("scopes portfolio benchmark-relative rows to each ticker's benchmark set", () => {
+    const events: PoliticalEvent[] = [
+      {
+        event_id: "a1",
+        ticker: "AAA",
+        source_dataset_id: "ticker_congress_trading",
+        actor: "Rep A",
+        side: "buy",
+        transaction_date: "2025-01-03",
+        report_date: "2025-01-06",
+        shares: 10,
+      },
+      {
+        event_id: "b1",
+        ticker: "BBB",
+        source_dataset_id: "ticker_senate_trading",
+        actor: "Sen B",
+        side: "sell",
+        transaction_date: "2025-01-03",
+        report_date: "2025-01-06",
+        shares: 15,
+      },
+    ]
+
+    const aaaBars: PriceBar[] = [
+      { symbol: "AAA", date: "2025-01-03", adjusted_close: 100 },
+      { symbol: "AAA", date: "2025-01-06", adjusted_close: 104 },
+    ]
+    const bbbBars: PriceBar[] = [
+      { symbol: "BBB", date: "2025-01-03", adjusted_close: 50 },
+      { symbol: "BBB", date: "2025-01-06", adjusted_close: 48 },
+    ]
+    const spyBars: PriceBar[] = [
+      { symbol: "SPY", date: "2025-01-03", adjusted_close: 500 },
+      { symbol: "SPY", date: "2025-01-06", adjusted_close: 505 },
+    ]
+    const xlfBars: PriceBar[] = [
+      { symbol: "XLF", date: "2025-01-03", adjusted_close: 40 },
+      { symbol: "XLF", date: "2025-01-06", adjusted_close: 41 },
+    ]
+    const xlvBars: PriceBar[] = [
+      { symbol: "XLV", date: "2025-01-03", adjusted_close: 130 },
+      { symbol: "XLV", date: "2025-01-06", adjusted_close: 131 },
+    ]
+
+    const eventWindowReturns = computeEventWindowReturns({
+      events,
+      anchor_mode: "transaction",
+      windows: [1],
+      alignment: "next_session",
+      price_by_symbol: {
+        AAA: aaaBars,
+        BBB: bbbBars,
+      },
+    })
+
+    const rows = FinancialPoliticalBacktestInternal.computePortfolioBenchmarkRelativeRows({
+      tickers: ["AAA", "BBB"],
+      eventWindowReturns,
+      benchmarkSymbolsByTicker: {
+        AAA: ["SPY", "XLF"],
+        BBB: ["SPY", "XLV"],
+      },
+      alignment: "next_session",
+      price_by_symbol: {
+        AAA: aaaBars,
+        BBB: bbbBars,
+        SPY: spyBars,
+        XLF: xlfBars,
+        XLV: xlvBars,
+      },
+    })
+
+    expect(rows).toHaveLength(4)
+    expect(rows.filter((row) => row.ticker === "AAA").map((row) => row.benchmark_symbol).sort()).toEqual(["SPY", "XLF"])
+    expect(rows.filter((row) => row.ticker === "BBB").map((row) => row.benchmark_symbol).sort()).toEqual(["SPY", "XLV"])
+    expect(rows.some((row) => row.ticker === "AAA" && row.benchmark_symbol === "XLV")).toBe(false)
+    expect(rows.some((row) => row.ticker === "BBB" && row.benchmark_symbol === "XLF")).toBe(false)
+  })
+
+  test("fails loudly when any portfolio ticker is missing scoped benchmark mapping", () => {
+    const eventWindowReturns = [
+      {
+        event_id: "a1",
+        ticker: "AAA",
+        anchor_kind: "transaction",
+        anchor_date: "2025-01-03",
+        aligned_anchor_date: "2025-01-03",
+        window_sessions: 1,
+        start_close: 100,
+        end_close: 104,
+        forward_return_percent: 4,
+      },
+      {
+        event_id: "b1",
+        ticker: "BBB",
+        anchor_kind: "transaction",
+        anchor_date: "2025-01-03",
+        aligned_anchor_date: "2025-01-03",
+        window_sessions: 1,
+        start_close: 50,
+        end_close: 48,
+        forward_return_percent: -4,
+      },
+    ] as const
+
+    const aaaBars: PriceBar[] = [
+      { symbol: "AAA", date: "2025-01-03", adjusted_close: 100 },
+      { symbol: "AAA", date: "2025-01-06", adjusted_close: 104 },
+    ]
+    const bbbBars: PriceBar[] = [
+      { symbol: "BBB", date: "2025-01-03", adjusted_close: 50 },
+      { symbol: "BBB", date: "2025-01-06", adjusted_close: 48 },
+    ]
+    const spyBars: PriceBar[] = [
+      { symbol: "SPY", date: "2025-01-03", adjusted_close: 500 },
+      { symbol: "SPY", date: "2025-01-06", adjusted_close: 505 },
+    ]
+
+    expect(() =>
+      FinancialPoliticalBacktestInternal.computePortfolioBenchmarkRelativeRows({
+        tickers: ["AAA", "BBB"],
+        eventWindowReturns: [...eventWindowReturns],
+        benchmarkSymbolsByTicker: {
+          AAA: ["SPY"],
+        },
+        alignment: "next_session",
+        price_by_symbol: {
+          AAA: aaaBars,
+          BBB: bbbBars,
+          SPY: spyBars,
+        },
+      }),
+    ).toThrow(EventStudyError)
   })
 
   test("fails loudly for empty portfolio prerequisites", () => {

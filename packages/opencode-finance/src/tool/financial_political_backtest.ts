@@ -278,6 +278,100 @@ function marketDateBounds(input: {
   }
 }
 
+function selectBenchmarksByTicker(input: {
+  tickers: string[]
+  benchmarkMode: BenchmarkMode
+  sectorsByTicker: Record<string, string | null>
+}) {
+  const byTicker: Record<string, ReturnType<typeof selectBenchmarks>> = {}
+  const benchmarkSymbols = new Set<string>()
+  const benchmarkRationale: string[] = []
+
+  for (const ticker of input.tickers) {
+    const selected = selectBenchmarks({
+      sector: input.sectorsByTicker[ticker] ?? null,
+      mode: input.benchmarkMode,
+    })
+    if (!Array.isArray(selected.symbols) || selected.symbols.length === 0) {
+      throw new EventStudyError(`No benchmark symbols were resolved for ${ticker}.`, "MISSING_BENCHMARK_SERIES", {
+        ticker,
+        benchmark_mode: input.benchmarkMode,
+      })
+    }
+    byTicker[ticker] = selected
+    selected.symbols.forEach((symbol) => benchmarkSymbols.add(symbol))
+    benchmarkRationale.push(`${ticker}: ${selected.rationale.join(" ")}`)
+  }
+
+  return {
+    byTicker,
+    symbols: [...benchmarkSymbols],
+    rationale: benchmarkRationale,
+  }
+}
+
+function computePortfolioBenchmarkRelativeRows(input: {
+  tickers: string[]
+  eventWindowReturns: ReturnType<typeof computeEventWindowReturns>
+  benchmarkSymbolsByTicker: Record<string, string[]>
+  alignment: NonTradingAlignment
+  price_by_symbol: Record<string, PriceBar[]>
+}) {
+  const benchmarkRelativeReturns: ReturnType<typeof computeBenchmarkRelativeReturns> = []
+
+  for (const ticker of input.tickers) {
+    const scopedRows = input.eventWindowReturns.filter((row) => row.ticker === ticker)
+    if (scopedRows.length === 0) {
+      throw new EventStudyError(`No event-window rows were produced for ${ticker} in portfolio mode.`, "EMPTY_EVENT_SET", {
+        ticker,
+      })
+    }
+
+    const benchmarkSymbols = input.benchmarkSymbolsByTicker[ticker]
+    if (!Array.isArray(benchmarkSymbols) || benchmarkSymbols.length === 0) {
+      throw new EventStudyError(`No scoped benchmark symbols were resolved for ${ticker}.`, "MISSING_BENCHMARK_SERIES", {
+        ticker,
+      })
+    }
+
+    const scopedRelative = computeBenchmarkRelativeReturns({
+      base: scopedRows,
+      benchmark_symbols: benchmarkSymbols,
+      alignment: input.alignment,
+      price_by_symbol: input.price_by_symbol,
+    })
+    if (scopedRelative.length === 0) {
+      throw new EventStudyError(`No benchmark-relative rows were produced for ${ticker} in portfolio mode.`, "MISSING_BENCHMARK_SERIES", {
+        ticker,
+        benchmarks: benchmarkSymbols,
+      })
+    }
+
+    benchmarkRelativeReturns.push(...scopedRelative)
+  }
+
+  if (benchmarkRelativeReturns.length === 0) {
+    throw new EventStudyError("No benchmark-relative rows were produced for this backtest run.", "MISSING_BENCHMARK_SERIES")
+  }
+
+  return benchmarkRelativeReturns
+}
+
+async function buildRunComparison(input: {
+  reportsRoot: string
+  scopeKey: string
+  currentSnapshot: BacktestRunSnapshot
+}) {
+  const priorRuns = await discoverHistoricalRuns({
+    reports_root: input.reportsRoot,
+    ticker: input.scopeKey,
+  })
+  return compareRuns({
+    current: input.currentSnapshot,
+    baseline: priorRuns.at(-1) ?? null,
+  })
+}
+
 function toReport(input: {
   mode: "ticker" | "portfolio"
   tickers: string[]
@@ -422,7 +516,6 @@ async function writeArtifacts(input: {
   comparison: string
 }): Promise<BacktestArtifactPaths> {
   await assertExternalDirectory(input.ctx, input.outputRoot, { kind: "directory" })
-  await fs.mkdir(input.outputRoot, { recursive: true })
   const worktree = projectRoot(input.ctx)
 
   const reportPath = path.join(input.outputRoot, "report.md")
@@ -433,17 +526,6 @@ async function writeArtifacts(input: {
   const benchmarkReturnsPath = path.join(input.outputRoot, "benchmark-relative-returns.json")
   const aggregatePath = path.join(input.outputRoot, "aggregate-results.json")
   const comparisonPath = path.join(input.outputRoot, "comparison.json")
-
-  await archiveExistingArtifacts(input.outputRoot, [
-    reportPath,
-    dashboardPath,
-    assumptionsPath,
-    eventsPath,
-    windowReturnsPath,
-    benchmarkReturnsPath,
-    aggregatePath,
-    comparisonPath,
-  ])
 
   await input.ctx.ask({
     permission: "edit",
@@ -463,6 +545,19 @@ async function writeArtifacts(input: {
       output_root: input.outputRoot,
     },
   })
+
+  await fs.mkdir(input.outputRoot, { recursive: true })
+
+  await archiveExistingArtifacts(input.outputRoot, [
+    reportPath,
+    dashboardPath,
+    assumptionsPath,
+    eventsPath,
+    windowReturnsPath,
+    benchmarkReturnsPath,
+    aggregatePath,
+    comparisonPath,
+  ])
 
   await Promise.all([
     Bun.write(reportPath, input.report),
@@ -586,22 +681,15 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         {} as Record<string, string | null>,
       )
 
-      let benchmarkSymbols = new Set<string>(["SPY"])
-      const benchmarkRationale: string[] = []
-      if (benchmarkMode === "spy_only") {
-        benchmarkRationale.push("SPY baseline included for all runs. Sector benchmark disabled by benchmark mode.")
-      } else {
-        for (const ticker of tickers) {
-          const selected = selectBenchmarks({
-            sector: sectorsByTicker[ticker] ?? null,
-            mode: benchmarkMode,
-          })
-          selected.symbols.forEach((symbol) => benchmarkSymbols.add(symbol))
-          benchmarkRationale.push(`${ticker}: ${selected.rationale.join(" ")}`)
-        }
-      }
-
-      const requiredSymbols = [...new Set([...tickers, ...benchmarkSymbols])]
+      const benchmarkSelection = selectBenchmarksByTicker({
+        tickers,
+        benchmarkMode,
+        sectorsByTicker,
+      })
+      const benchmarkSymbolsByTicker = Object.fromEntries(
+        Object.entries(benchmarkSelection.byTicker).map(([ticker, selected]) => [ticker, selected.symbols]),
+      )
+      const requiredSymbols = [...new Set([...tickers, ...benchmarkSelection.symbols])]
       const priceBySymbol = (
         await Promise.all(
           requiredSymbols.map(async (symbol) => {
@@ -641,9 +729,10 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
                 alignment: DEFAULT_ALIGNMENT,
                 price_by_symbol: priceBySymbol,
               })
-              const benchmarkRelativeReturns = computeBenchmarkRelativeReturns({
-                base: eventWindowReturns,
-                benchmark_symbols: [...benchmarkSymbols],
+              const benchmarkRelativeReturns = computePortfolioBenchmarkRelativeRows({
+                tickers,
+                eventWindowReturns,
+                benchmarkSymbolsByTicker,
                 alignment: DEFAULT_ALIGNMENT,
                 price_by_symbol: priceBySymbol,
               })
@@ -652,8 +741,8 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
                 benchmark_relative_returns: benchmarkRelativeReturns,
                 aggregates: aggregateByWindow(benchmarkRelativeReturns),
                 benchmark_selection: {
-                  symbols: [...benchmarkSymbols],
-                  rationale: benchmarkRationale,
+                  symbols: benchmarkSelection.symbols,
+                  rationale: benchmarkSelection.rationale,
                   sector: null,
                   sector_etf: null,
                 },
@@ -679,14 +768,10 @@ export const FinancialPoliticalBacktestTool = Tool.define("financial_political_b
         aggregates: core.aggregates,
         event_ids: [...new Set(normalized.map((item) => item.event_id))].sort((a, b) => a.localeCompare(b)),
       }
-      const priorRuns = await discoverHistoricalRuns({
-        reports_root: projectRoot(ctx),
-        ticker: scopeKey,
-        exclude_output_root: outputRoot,
-      })
-      const comparison = compareRuns({
-        current: currentSnapshot,
-        baseline: priorRuns.at(-1) ?? null,
+      const comparison = await buildRunComparison({
+        reportsRoot: projectRoot(ctx),
+        scopeKey,
+        currentSnapshot,
       })
 
       const warnings = [
@@ -830,6 +915,10 @@ export const FinancialPoliticalBacktestInternal = {
   resolveAuthFromState,
   assertDatasetsComplete,
   portfolioTickersFromHoldings,
+  selectBenchmarksByTicker,
+  computePortfolioBenchmarkRelativeRows,
+  buildRunComparison,
+  writeArtifacts,
   parseChartBars,
   fetchYahooDailyBars,
   marketDateBounds,
