@@ -91,6 +91,28 @@ describe("collectGovernmentTradingSourceRows", () => {
     expect(result[0]?.row.amount).toBe(10)
   })
 
+  it("overrides source requested_ticker with injected ticker scope", () => {
+    const result = collectGovernmentTradingSourceRows({
+      globalDatasets: [],
+      tickerDatasets: [
+        {
+          ticker: "TSLA",
+          datasets: [
+            dataset({
+              id: "ticker_house_trading",
+              label: "Ticker House Trading",
+              rows: [{ requested_ticker: "", amount: 10 }],
+            }),
+          ],
+        },
+      ],
+      limitPerDataset: 1,
+    })
+
+    expect(result).toHaveLength(1)
+    expect(result[0]?.row.requested_ticker).toBe("TSLA")
+  })
+
   it("supports edge limits of 1 and 200", () => {
     const rows = Array.from({ length: 250 }, (_, index) => ({ index }))
     const global = [dataset({ id: "global_house_trading", label: "Global House Trading", rows })]

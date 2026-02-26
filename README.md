@@ -25,9 +25,13 @@ When `enabled_providers` is set in OpenCode config, `opencode-finance` auto-incl
 
 ## Slash command: government trading
 
-Use `/financial-government-trading [ticker]` to generate strict government-trading delta artifacts from required Quiver datasets. Pass a ticker for ticker mode, or omit it for portfolio mode.
+Use `/financial-government-trading [ticker]` to generate strict government-trading delta artifacts from required Quiver datasets. Pass a ticker for ticker mode, or omit it for global mode.
 
-The command writes these artifacts per run in `reports/government-trading/<mode>/<scope>/<run_id>/`:
+The command writes these artifacts per run in:
+- ticker mode: `reports/government-trading/ticker/<TICKER>/<run_id>/`
+- global mode: `reports/government-trading/global/<run_id>/`
+
+Each run directory contains:
 - `report.md`
 - `dashboard.md`
 - `assumptions.json`

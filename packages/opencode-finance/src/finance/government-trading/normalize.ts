@@ -265,11 +265,39 @@ export function normalizeGovernmentTradingEvent(input: GovernmentTradingSourceRo
   }
 }
 
+function disambiguatedIdentityKey(event: GovernmentTradingNormalizedEvent): string {
+  const canonicalRowHash = stableHash(stableStringify(event.canonicalRow))
+  return stableHash(
+    stableStringify(
+      sortRecord({
+        base_identity_key: event.identityKey,
+        canonical_row_hash: canonicalRowHash,
+      }),
+    ),
+  )
+}
+
+function disambiguateDuplicateIdentityKeys(events: GovernmentTradingNormalizedEvent[]): GovernmentTradingNormalizedEvent[] {
+  const counts = new Map<string, number>()
+  for (const event of events) {
+    counts.set(event.identityKey, (counts.get(event.identityKey) ?? 0) + 1)
+  }
+
+  return events.map((event) => {
+    if ((counts.get(event.identityKey) ?? 0) < 2) return event
+    return {
+      ...event,
+      identityKey: disambiguatedIdentityKey(event),
+    }
+  })
+}
+
 export function normalizeGovernmentTradingEvents(input: GovernmentTradingSourceRow[]): GovernmentTradingNormalizedEvent[] {
-  return input.map((item, index) =>
+  const normalized = input.map((item, index) =>
     normalizeGovernmentTradingEvent({
       ...item,
       rowIndex: item.rowIndex ?? index,
     }),
   )
+  return disambiguateDuplicateIdentityKeys(normalized)
 }

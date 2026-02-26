@@ -7,7 +7,6 @@ import { Auth } from "../auth"
 import { Env } from "../env"
 import { FINANCE_AUTH_PROVIDER } from "../finance/auth-provider"
 import { resolveStrictQuiverAuth } from "../finance/quiver-auth"
-import { listPortfolio } from "../finance/portfolio"
 import { normalizeTicker } from "../finance/parser"
 import { computeGovernmentTradingDelta } from "../finance/government-trading/delta"
 import { loadGovernmentTradingHistory } from "../finance/government-trading/history"
@@ -27,8 +26,10 @@ const REQUIRED_TICKER_IDS = ["ticker_congress_trading", "ticker_senate_trading",
 
 const MAX_PERSISTENCE_ROWS_IN_ARTIFACTS = 75
 
+type ReportGovernmentTradingMode = "ticker" | "global"
+
 const parameters = z.object({
-  ticker: z.string().optional().describe("Optional ticker for ticker mode; omit for portfolio mode."),
+  ticker: z.string().optional().describe("Optional ticker for ticker mode; omit for global mode."),
   output_root: z
     .string()
     .optional()
@@ -38,7 +39,7 @@ const parameters = z.object({
 })
 
 type ReportGovernmentTradingMetadata = {
-  mode: "ticker" | "portfolio"
+  mode: ReportGovernmentTradingMode
   scope: string
   tier: QuiverTier
   generated_at: string
@@ -101,9 +102,9 @@ function normalizeOutputRoot(context: Pick<Tool.Context, "directory" | "worktree
   return path.isAbsolute(outputRoot) ? path.normalize(outputRoot) : path.resolve(context.directory, outputRoot)
 }
 
-function normalizeScope(mode: "ticker" | "portfolio", ticker: string, tickers: string[]) {
+function normalizeScope(mode: ReportGovernmentTradingMode, ticker: string) {
   if (mode === "ticker") return ticker
-  return tickers.length > 0 ? "portfolio" : "global"
+  return "global"
 }
 
 function createRunId(generatedAt: string) {
@@ -268,7 +269,7 @@ function sourceAttributionLines(snapshots: DatasetSnapshot[]) {
 }
 
 function buildReportMarkdown(input: {
-  mode: "ticker" | "portfolio"
+  mode: ReportGovernmentTradingMode
   scope: string
   generatedAt: string
   runId: string
@@ -356,7 +357,7 @@ function buildReportMarkdown(input: {
 }
 
 function buildDashboardMarkdown(input: {
-  mode: "ticker" | "portfolio"
+  mode: ReportGovernmentTradingMode
   scope: string
   generatedAt: string
   runId: string
@@ -506,37 +507,24 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
     parameters,
     async execute(params, ctx) {
       const auth = await resolveAuth()
-      const mode = params.ticker ? "ticker" : "portfolio"
+      const mode: ReportGovernmentTradingMode = params.ticker ? "ticker" : "global"
       const ticker = params.ticker ? normalizeTicker(params.ticker) : ""
 
       if (mode === "ticker" && !ticker) {
         throw new Error("ticker must include at least one valid symbol character")
       }
 
-      if (mode === "portfolio") {
-        await ctx.ask({
-          permission: "portfolio",
-          patterns: ["list", "report", "government-trading"],
-          always: ["*"],
-          metadata: {
-            action: "report_government_trading",
-          },
-        })
-      }
+      const tickers = mode === "ticker" ? [ticker] : []
 
-      const tickers =
-        mode === "ticker"
-          ? [ticker]
-          : await listPortfolio().then((items) => [...new Set(items.map((item) => normalizeTicker(item.ticker)).filter(Boolean))])
-
-      const scope = normalizeScope(mode, ticker, tickers)
+      const scope = normalizeScope(mode, ticker)
       const limitRequested = params.limit ?? 50
       const limitEffective = clampLimit(limitRequested)
       const generatedAt = new Date().toISOString()
       const runId = createRunId(generatedAt)
 
       const outputBase = normalizeOutputRoot(ctx, params.output_root)
-      const historyRoot = path.join(outputBase, mode, scope)
+      const historyRoot =
+        mode === "ticker" ? path.join(outputBase, "ticker", scope) : path.join(outputBase, "global")
       const runDirectory = path.join(historyRoot, runId)
 
       await ctx.ask({
@@ -642,12 +630,7 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
 
       const rendered = renderGovernmentTradingArtifacts({
         generatedAt,
-        title:
-          mode === "ticker"
-            ? `Government Trading Report (${scope})`
-            : scope === "global"
-              ? "Government Trading Report (Global)"
-              : "Government Trading Report (Portfolio)",
+        title: mode === "ticker" ? `Government Trading Report (${scope})` : "Government Trading Report (Global)",
         assumptions,
         currentEvents: normalizedEvents,
         delta,
@@ -768,12 +751,7 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
       }
 
       return {
-        title:
-          mode === "ticker"
-            ? `report_government_trading: ${scope}`
-            : scope === "global"
-              ? "report_government_trading: global"
-              : `report_government_trading: portfolio (${tickers.length})`,
+        title: mode === "ticker" ? `report_government_trading: ${scope}` : "report_government_trading: global",
         metadata,
         output: JSON.stringify(
           {

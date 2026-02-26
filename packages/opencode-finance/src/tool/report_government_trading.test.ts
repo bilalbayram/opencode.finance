@@ -26,4 +26,13 @@ describe("ReportGovernmentTradingTool", () => {
     expect(parameters.safeParse({ limit: 1.5 }).success).toBe(false)
     expect(parameters.safeParse({ refresh: "true" }).success).toBe(false)
   })
+
+  it("documents no-ticker behavior as global-only", async () => {
+    const tool = await ReportGovernmentTradingTool.init()
+    const { parameters } = tool
+
+    expect(tool.description).toContain("no-ticker mode: omit `ticker` to run global datasets only")
+    expect(tool.description).not.toContain("if holdings exist")
+    expect(parameters.shape.ticker.description).toContain("global mode")
+  })
 })

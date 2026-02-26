@@ -36,11 +36,11 @@ If your OpenCode config uses `enabled_providers`, this plugin auto-includes its 
 ## Commands and tools
 
 
-The plugin adds finance commands (`/quote`, `/metrics`, `/filings`, `/watch`, `/portfolio`, `/report-portfolio`, `/report-insiders`, `/financial-government-trading`, `/financial-darkpool-anomaly` `/report-pdf`, `/market`, `/report`, `/onboard`) and tools (`financial_search`, `portfolio`, `portfolio_report`, `report_insiders`, `report_government_trading`, `report_pdf`).
+The plugin adds finance commands (`/quote`, `/metrics`, `/filings`, `/watch`, `/portfolio`, `/report-portfolio`, `/report-insiders`, `/financial-government-trading`, `/financial-darkpool-anomaly`, `/report-pdf`, `/market`, `/report`, `/onboard`) and tools (`financial_search`, `portfolio`, `portfolio_report`, `report_insiders`, `report_government_trading`, `report_pdf`).
 
 `/report` is the comprehensive report workflow powered by the `finance-comprehensive-report` skill and profile-based `report_pdf` export (`subcommand: report`) after markdown artifacts.
 
-`/report-pdf` requires an explicit profile mode: `report` or `darkpool-anomaly`.
+`/report-pdf` requires an explicit profile mode: `report`, `government-trading`, or `darkpool-anomaly`.
 
 ## Migration helper
 

@@ -51,8 +51,8 @@ export function collectGovernmentTradingSourceRows(
           datasetId: dataset.id,
           datasetLabel: `${dataset.label} (${tickerItem.ticker})`,
           row: {
-            requested_ticker: tickerItem.ticker,
             ...row,
+            requested_ticker: tickerItem.ticker,
           },
           rowIndex,
         })
