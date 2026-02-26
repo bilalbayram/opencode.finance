@@ -6,6 +6,7 @@ import DESCRIPTION from "./report_government_trading.txt"
 import { Auth } from "../auth"
 import { Env } from "../env"
 import { FINANCE_AUTH_PROVIDER } from "../finance/auth-provider"
+import { resolveStrictQuiverAuth } from "../finance/quiver-auth"
 import { listPortfolio } from "../finance/portfolio"
 import { normalizeTicker } from "../finance/parser"
 import { computeGovernmentTradingDelta } from "../finance/government-trading/delta"
@@ -14,12 +15,7 @@ import { normalizeGovernmentTradingEvents } from "../finance/government-trading/
 import { renderGovernmentTradingArtifacts } from "../finance/government-trading/renderer"
 import { collectGovernmentTradingSourceRows } from "../finance/government-trading/source-rows"
 import type { GovernmentTradingHistoryRun, GovernmentTradingNormalizedEvent } from "../finance/government-trading/types"
-import {
-  quiverPlanLabel,
-  resolveQuiverTierFromAuth,
-  tierAllows,
-  type QuiverTier,
-} from "../finance/quiver-tier"
+import { quiverPlanLabel, type QuiverTier } from "../finance/quiver-tier"
 import * as QuiverReport from "../finance/providers/quiver-report"
 import { assertExternalDirectory } from "./external-directory"
 
@@ -204,7 +200,7 @@ function assertRequiredDatasets(input: {
     }
 
     throw new Error(
-      `Required ${input.scope} dataset ${dataset.id} was not attempted due to plan tier. Upgrade Quiver Quant to Hobbyist (Tier 0 + Tier 1) or higher and rerun ${LOGIN_HINT}.`,
+      `Required ${input.scope} dataset ${dataset.id} was not attempted due to plan tier. Upgrade Quiver Quant to Hobbyist (Tier 0 + Tier 1) or higher and rerun ${LOGIN_HINT}. If your key was upgraded recently, re-run login to refresh stored plan metadata.`,
     )
   }
 }
@@ -440,31 +436,13 @@ async function resolveAuth() {
   const auth = await Auth.get("quiver-quant")
   const env = FINANCE_AUTH_PROVIDER["quiver-quant"].env.map((key) => Env.get(key)).find(Boolean)
 
-  if (!auth || auth.type !== "api") {
-    if (env) {
-      throw new Error(`Quiver plan metadata is missing. Run \`${LOGIN_HINT}\` to store key + plan.`)
-    }
-    throw new Error(`Quiver Quant is required for this report. Run \`${LOGIN_HINT}\`.`)
-  }
-
-  const key = env ?? auth.key
-  if (!key?.trim()) {
-    throw new Error(`Quiver Quant API key is missing. Run \`${LOGIN_HINT}\`.`)
-  }
-
-  const tier = resolveQuiverTierFromAuth(auth)
-  if (!tierAllows("tier_1", tier.tier)) {
-    throw new Error(
-      `Quiver plan ${quiverPlanLabel(tier.tier)} cannot access Tier 1 government-trading datasets required by this report. Upgrade to Hobbyist (Tier 0 + Tier 1) or higher and rerun \`${LOGIN_HINT}\`.`,
-    )
-  }
-
-  return {
-    key,
-    tier: tier.tier,
-    inferred: tier.inferred,
-    warning: tier.warning,
-  }
+  return resolveStrictQuiverAuth({
+    authInfo: auth,
+    envKey: env,
+    loginHint: LOGIN_HINT,
+    requiredEndpointTier: "tier_1",
+    capabilityLabel: "Tier 1 government-trading datasets required by this report",
+  })
 }
 
 async function writeArtifacts(input: {

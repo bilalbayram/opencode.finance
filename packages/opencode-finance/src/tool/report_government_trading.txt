@@ -6,9 +6,12 @@ Modes:
 
 Behavior:
 - Requires Quiver Quant authentication with stored plan metadata
+- Plan metadata must be present and valid for strict local tier gating
+- Missing/invalid/stale plan metadata is a hard stop; re-run `opencode auth login` and select `quiver-quant`
 - Requires a plan that includes Tier 1 government-trading datasets
 - Fetches required global live datasets (congress/senate/house)
 - Fetches required per-ticker historical datasets (congress/senate/house)
+- Never calls datasets above the locally validated plan tier
 - Fails the run if any required dataset fetch fails
 - Normalizes events, compares against the most recent prior run baseline, and computes persistence trends
 - Writes artifacts under a deterministic run directory:

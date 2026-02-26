@@ -6,6 +6,8 @@ Modes:
 
 Behavior:
 - Quiver Quant auth is required
+- Plan metadata must be present and valid for strict local tier gating
+- Missing/invalid/stale plan metadata is a hard stop; re-run `opencode auth login` and select `quiver-quant`
 - Uses saved Quiver plan metadata for endpoint gating
 - Never calls datasets above the user's tier
 - Always includes a global government-trading section (congress/senate/house)
