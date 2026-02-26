@@ -59,6 +59,14 @@ export const FINANCE_SLASH_COMMANDS: FinanceSlashCommand[] = [
       'Generate a tier-aware insider report using Quiver Quant.\n\nExecution rules:\n1) If "$1" exists, call `report_insiders` with `{ ticker: "$1", limit: 50 }`.\n2) If "$1" is missing, call `report_insiders` with `{ limit: 50 }` for portfolio mode.\n3) Then provide a concise in-chat executive summary with:\n   - mode (`ticker` or `portfolio`)\n   - Quiver plan used (`Public`, `Hobbyist`, `Trader`, or `Enterprise`)\n   - coverage/degradation notes including `not_attempted_due_to_tier`\n   - last 7-day insider/government activity highlights\n   - global government-trading summary (congress/senate/house)\n4) Point directly to artifact files from the tool output:\n   - `insiders-report.md`\n   - `insiders-data.json`\n\nIf tool output reports missing Quiver setup, show:\n`curl -fsSL https://opencode.finance/install.sh | bash`\n\nDo not provide investment advice.',
   },
   {
+    name: "financial-government-trading",
+    description: "Generate strict government-trading delta artifacts from Quiver Tier 1 feeds",
+    hints: ["$1"],
+    aliases: ["government-trading", "report-government-trading"],
+    template:
+      'Generate a strict government-trading report using Quiver Quant required datasets.\n\nExecution rules:\n1) If "$1" exists, call `report_government_trading` with `{ ticker: "$1", limit: 50 }`.\n2) If "$1" is missing, call `report_government_trading` with `{ limit: 50 }` for global mode.\n3) Then provide a concise in-chat summary with:\n   - mode and scope\n   - generated_at, run_id, and baseline_run_id\n   - delta counts (`new_events`, `updated_events`, `unchanged_events`, `no_longer_present_events`)\n   - persistence trend highlights\n   - source attribution timestamps for required datasets\n4) Point directly to artifact files from the tool output:\n   - `report.md`\n   - `dashboard.md`\n   - `assumptions.json`\n   - `normalized-events.json`\n   - `delta-events.json`\n   - `data.json`\n5) After summary, ask exactly one user question with the `question` tool:\n   - header: `PDF Export`\n   - question: `Generate a polished PDF report now?`\n   - options:\n     1) `Yes (Recommended)` - Generate a polished PDF in the same output directory.\n     2) `No` - Skip PDF generation.\n   - custom: `false`\n6) If user selects `Yes (Recommended)`, call `report_pdf` with:\n   - `subcommand`: `government-trading`\n   - `outputRoot`: `<artifacts.output_root>`\n   - `filename`: `government-trading-<run_id>.pdf`\n\nIf tool output reports missing Quiver setup, show:\n`curl -fsSL https://opencode.finance/install.sh | bash`\n\nIf `question` is unavailable in this client context, skip PDF export and complete normally.\n\nDo not provide investment advice.',
+  },
+  {
     name: "market",
     description: "Summarize current market overview",
     hints: ["$ARGUMENTS"],
@@ -79,7 +87,7 @@ export const FINANCE_SLASH_COMMANDS: FinanceSlashCommand[] = [
     hints: ["$1", "$2", "$3"],
     aliases: ["pdf-report"],
     template:
-      'Export an existing artifact directory to PDF.\n\nUsage:\n- `/report-pdf report <output_root> [filename]`\n- `/report-pdf darkpool-anomaly <output_root> [filename]`\n\nExecution rules:\n1) Require `$1` to be exactly `report` or `darkpool-anomaly`; if invalid, stop and show usage.\n2) Require `$2` as output directory path.\n3) Call `report_pdf` with:\n   - `subcommand`: `$1`\n   - `outputRoot`: `$2`\n   - `filename`: `$3` when provided\n4) Return the generated PDF path and profile used.\n\nDo not invent paths.',
+      'Export an existing artifact directory to PDF.\n\nUsage:\n- `/report-pdf report <output_root> [filename]`\n- `/report-pdf government-trading <output_root> [filename]`\n\nExecution rules:\n1) Require `$1` to be exactly `report` or `government-trading` or `darkpool-anomaly`; if invalid, stop and show usage.\n2) Require `$2` as output directory path.\n3) Call `report_pdf` with:\n   - `subcommand`: `$1`\n   - `outputRoot`: `$2`\n   - `filename`: `$3` when provided\n4) Return the generated PDF path and profile used.\n\nDo not invent paths.',
   },
   {
     name: "report",

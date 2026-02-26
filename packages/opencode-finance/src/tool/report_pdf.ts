@@ -14,7 +14,7 @@ const TOP = PAGE_HEIGHT - HEADER_HEIGHT - 30
 const BOTTOM = 56
 const FOOTER_TEXT = "opencode.finance"
 const FOOTER_URL = "https://opencode.finance"
-const PDF_SUBCOMMAND = ["report", "darkpool-anomaly"] as const
+const PDF_SUBCOMMAND = ["report", "government-trading", "darkpool-anomaly"] as const
 const PDF_SUBCOMMAND_SET = new Set<string>(PDF_SUBCOMMAND)
 const PDF_SUBCOMMAND_LABEL = PDF_SUBCOMMAND.join(", ")
 
@@ -97,6 +97,9 @@ type LoadedArtifacts = {
   report: string
   dashboard?: string
   assumptions?: string
+  normalizedEventsJson?: string
+  deltaEventsJson?: string
+  dataJson?: string
   evidenceMarkdown?: string
   evidenceJson?: string
 }
@@ -110,13 +113,7 @@ type PdfSection = {
 type PdfProfile = {
   buildCoverData: (input: { artifacts: LoadedArtifacts; hints: RootHints }) => Cover
   enrichCover: (input: { info: Cover; ctx: Tool.Context }) => Promise<Cover>
-  renderCover: (input: {
-    pdf: PDFDocument
-    info: Cover
-    font: FontSet
-    icon?: Image
-    artifacts: LoadedArtifacts
-  }) => void
+  renderCover: (input: { pdf: PDFDocument; info: Cover; font: FontSet; icon?: Image; artifacts: LoadedArtifacts }) => void
   sectionPlan: (artifacts: LoadedArtifacts) => PdfSection[]
   qualityGate: (input: { info: Cover; artifacts: LoadedArtifacts }) => string[]
 }
@@ -211,6 +208,7 @@ export const ReportPdfTool = Tool.define("report_pdf", {
       info,
       artifacts,
     })
+
     if (quality.length) {
       throw new Error(
         ["PDF export blocked by institutional quality gate:", ...quality.map((item) => `- ${item}`)].join("\n"),
@@ -303,6 +301,47 @@ function sectionPlanForSubcommand(subcommand: PdfSubcommand, artifacts: LoadedAr
 }
 
 function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
+  if (subcommand === "government-trading") {
+    return {
+      buildCoverData: ({ artifacts, hints }) => governmentTradingCoverData(artifacts.report, artifacts.dashboard, hints),
+      enrichCover: async ({ info }) => info,
+      renderCover: ({ pdf, info, font, icon }) => renderReportCover(pdf, info, font, icon),
+      sectionPlan: (artifacts) => [
+        {
+          title: "Dashboard",
+          content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
+        },
+        {
+          title: "Full Report",
+          content: artifacts.report,
+        },
+        {
+          title: "Assumptions",
+          content: assumptionsMarkdown(artifacts.assumptions),
+        },
+        {
+          title: "Delta Events",
+          content: jsonArtifactContent(artifacts.deltaEventsJson, "delta-events.json"),
+          style: { mono: true, size: 9, line: 12 },
+        },
+        {
+          title: "Normalized Events",
+          content: jsonArtifactContent(artifacts.normalizedEventsJson, "normalized-events.json"),
+          style: { mono: true, size: 9, line: 12 },
+        },
+      ],
+      qualityGate: ({ artifacts }) =>
+        qualityIssuesGovernmentTrading({
+          report: artifacts.report,
+          dashboard: artifacts.dashboard,
+          assumptions: artifacts.assumptions,
+          normalizedEventsJson: artifacts.normalizedEventsJson,
+          deltaEventsJson: artifacts.deltaEventsJson,
+          dataJson: artifacts.dataJson,
+        }),
+    }
+  }
+
   if (subcommand === "darkpool-anomaly") {
     return {
       buildCoverData: ({ artifacts, hints }) => darkpoolCoverData(artifacts.report, artifacts.dashboard, hints),
@@ -367,6 +406,16 @@ function artifactReadPatterns(root: string, subcommand: PdfSubcommand) {
   if (subcommand === "report") {
     return [report, dashboard, assumptions]
   }
+  if (subcommand === "government-trading") {
+    return [
+      report,
+      dashboard,
+      assumptions,
+      path.join(root, "normalized-events.json"),
+      path.join(root, "delta-events.json"),
+      path.join(root, "data.json"),
+    ]
+  }
   return [report, dashboard, assumptions, path.join(root, "evidence.md"), path.join(root, "evidence.json")]
 }
 
@@ -380,6 +429,17 @@ async function loadArtifacts(root: string, subcommand: PdfSubcommand): Promise<L
       report: await readRequired(report),
       dashboard: await readOptional(dashboard),
       assumptions: await readOptional(assumptions),
+    }
+  }
+
+  if (subcommand === "government-trading") {
+    return {
+      report: await readRequired(report),
+      dashboard: await readRequired(dashboard),
+      assumptions: await readRequired(assumptions),
+      normalizedEventsJson: await readRequired(path.join(root, "normalized-events.json")),
+      deltaEventsJson: await readRequired(path.join(root, "delta-events.json")),
+      dataJson: await readRequired(path.join(root, "data.json")),
     }
   }
 
@@ -487,6 +547,48 @@ function reportCoverData(report: string, dashboard: string | undefined, hints: R
     summary,
     positive: pick(positive, ["unknown"]),
     negative: pick(negative, ["unknown"]),
+    metrics,
+  }
+}
+
+function governmentTradingCoverData(report: string, dashboard: string | undefined, hints: RootHints): Cover {
+  const title =
+    report
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.startsWith("# "))
+      ?.replace(/^#\s+/, "")
+      .trim() ?? "Government Trading Report"
+
+  const scope = report.match(/^-+\s*scope:\s*(.+)$/im)?.[1]?.trim() ?? hints.ticker
+  const generatedAt = report.match(/^-+\s*generated_at:\s*([^\n]+)/im)?.[1]?.trim() ?? hints.date
+  const runId = report.match(/^-+\s*run_id:\s*([^\n]+)/im)?.[1]?.trim() ?? hints.date
+  const mode = report.match(/^-+\s*mode:\s*(.+)$/im)?.[1]?.trim() ?? "unknown"
+
+  const summary = trim(plainText(executiveSummary(report)), 1400)
+  const ticker = tickerLabel(scope)
+  const date = generatedAt
+  const metrics = [
+    metric("Mode", mode),
+    metric("Scope", scope),
+    metric("Current Events", metricValue(dashboard, [/^current_events$/i]) ?? "unknown"),
+    metric("New Events", metricValue(dashboard, [/^new_events$/i]) ?? "unknown"),
+    metric("Updated Events", metricValue(dashboard, [/^updated_events$/i]) ?? "unknown"),
+    metric("Run ID", runId),
+  ]
+
+  return {
+    title,
+    ticker,
+    date,
+    sector: "government trading",
+    headquarters: "unknown",
+    icon: "",
+    score: "DELTA",
+    band: "NEUTRAL",
+    summary: summary || "Government trading delta report.",
+    positive: pick(listUnder(report, /persistence trends/i), ["Review persistence trends in report artifacts."]),
+    negative: pick(listUnder(report, /delta preview/i), ["Review delta preview and no-longer-present events."]),
     metrics,
   }
 }
@@ -644,6 +746,13 @@ function textOrUnknown(input: string | undefined, file: string) {
   return `unknown\n\nThe artifact \`${file}\` was not found in outputRoot.`
 }
 
+function jsonArtifactContent(input: string | undefined, file: string) {
+  if (!input) return textOrUnknown(input, file)
+  const parsed = parseJson(input)
+  if (!parsed) return input
+  return JSON.stringify(parsed, null, 2)
+}
+
 function iconUrl(raw: string | undefined, website: string) {
   if (raw && !isUnknown(raw)) return raw.trim()
   const host = website
@@ -712,9 +821,23 @@ function qualityIssuesBySubcommand(input: {
   report: string
   dashboard?: string
   assumptions?: string
+  normalizedEventsJson?: string
+  deltaEventsJson?: string
+  dataJson?: string
   evidenceMarkdown?: string
   evidenceJson?: string
 }) {
+  if (input.subcommand === "government-trading") {
+    return qualityIssuesGovernmentTrading({
+      report: input.report,
+      dashboard: input.dashboard,
+      assumptions: input.assumptions,
+      normalizedEventsJson: input.normalizedEventsJson,
+      deltaEventsJson: input.deltaEventsJson,
+      dataJson: input.dataJson,
+    })
+  }
+
   if (input.subcommand === "darkpool-anomaly") {
     return qualityIssuesDarkpool({
       report: input.report,
@@ -726,6 +849,86 @@ function qualityIssuesBySubcommand(input: {
   }
 
   return qualityIssuesReport(input.info, input.report, input.dashboard, input.assumptions)
+}
+
+function qualityIssuesGovernmentTrading(input: {
+  report: string
+  dashboard?: string
+  assumptions?: string
+  normalizedEventsJson?: string
+  deltaEventsJson?: string
+  dataJson?: string
+}) {
+  const issues: string[] = []
+  if (!/^#\s+government trading report\b/im.test(input.report)) {
+    issues.push("Government-trading PDF export requires `report.md` to start with `# Government Trading Report`.")
+  }
+
+  if (!input.dashboard) {
+    issues.push("Government-trading PDF export requires `dashboard.md`.")
+  } else if (!/^#\s+government trading dashboard\b/im.test(input.dashboard)) {
+    issues.push("Government-trading PDF export requires `dashboard.md` to start with `# Government Trading Dashboard`.")
+  }
+
+  const requiredRunMetadataKeys = ["mode", "scope", "generated_at", "run_id"] as const
+  for (const key of requiredRunMetadataKeys) {
+    const matcher = new RegExp(`^-\\s*${key}\\s*:`, "im")
+    if (!matcher.test(input.report)) {
+      issues.push(`Government-trading report metadata is missing \`${key}\` in \`report.md\`.`)
+    }
+  }
+
+  const requiredDeltaMetrics = [
+    "current_events",
+    "new_events",
+    "updated_events",
+    "unchanged_events",
+    "no_longer_present_events",
+  ] as const
+  for (const metric of requiredDeltaMetrics) {
+    const matcher = new RegExp(`\\|\\s*${metric}\\s*\\|`, "i")
+    if (!matcher.test(input.dashboard ?? "")) {
+      issues.push(`Government-trading dashboard is missing delta metric \`${metric}\` in \`dashboard.md\`.`)
+    }
+  }
+
+  if (!input.assumptions) {
+    issues.push("Missing required government-trading artifact `assumptions.json`.")
+  } else {
+    const parsed = parseJson(input.assumptions)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      issues.push("`assumptions.json` must be a valid JSON object.")
+    }
+  }
+
+  if (!input.normalizedEventsJson) {
+    issues.push("Missing required government-trading artifact `normalized-events.json`.")
+  } else {
+    const parsed = parseJson(input.normalizedEventsJson)
+    if (!Array.isArray(parsed)) {
+      issues.push("`normalized-events.json` must be a valid JSON array.")
+    }
+  }
+
+  if (!input.deltaEventsJson) {
+    issues.push("Missing required government-trading artifact `delta-events.json`.")
+  } else {
+    const parsed = parseJson(input.deltaEventsJson)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      issues.push("`delta-events.json` must be a valid JSON object.")
+    }
+  }
+
+  if (!input.dataJson) {
+    issues.push("Missing required government-trading artifact `data.json`.")
+  } else {
+    const parsed = parseJson(input.dataJson)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      issues.push("`data.json` must be a valid JSON object.")
+    }
+  }
+
+  return issues
 }
 
 function qualityIssuesReport(info: Cover, report: string, dashboard: string | undefined, assumptions: string | undefined) {
@@ -2317,6 +2520,7 @@ export const ReportPdfInternal = {
   sectionPlanForSubcommand,
   coverData: reportCoverData,
   reportCoverData,
+  governmentTradingCoverData,
   darkpoolCoverData,
   extractDarkpoolCoverData,
   defaultRootHints,
@@ -2327,5 +2531,6 @@ export const ReportPdfInternal = {
   assumptionsMarkdown,
   qualityIssuesBySubcommand,
   qualityIssuesReport,
+  qualityIssuesGovernmentTrading,
   qualityIssuesDarkpool,
 }
