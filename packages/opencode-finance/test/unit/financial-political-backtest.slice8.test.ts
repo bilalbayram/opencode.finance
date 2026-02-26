@@ -94,6 +94,50 @@ describe("financial_political_backtest slice 8", () => {
     expect(firstID).toBe(secondID)
   })
 
+  test("parses non-ISO timezone-less dates in UTC for stable calendar-day normalization", () => {
+    const events = normalizePoliticalEvents({
+      ticker: "AAA",
+      datasets: [
+        {
+          id: "ticker_house_trading",
+          rows: [
+            {
+              Ticker: "AAA",
+              TransactionDate: "01/03/2025 23:00:00",
+              Representative: "Rep A",
+              TransactionType: "Purchase",
+              Amount: "1000",
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(events[0]?.transaction_date).toBe("2025-01-03")
+  })
+
+  test("preserves explicit timezone semantics when normalizing non-ISO dates", () => {
+    const events = normalizePoliticalEvents({
+      ticker: "AAA",
+      datasets: [
+        {
+          id: "ticker_house_trading",
+          rows: [
+            {
+              Ticker: "AAA",
+              TransactionDate: "2025-01-03T23:00:00-05:00",
+              Representative: "Rep A",
+              TransactionType: "Purchase",
+              Amount: "1000",
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(events[0]?.transaction_date).toBe("2025-01-04")
+  })
+
   test("preserves timestamp/price positional alignment when parsing chart bars", () => {
     const rows = FinancialPoliticalBacktestInternal.parseChartBars({
       symbol: "AAA",

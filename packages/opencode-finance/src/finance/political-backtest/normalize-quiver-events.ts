@@ -4,6 +4,8 @@ import type { IsoDate, NormalizedPoliticalEvent, PoliticalTransactionType, Quive
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const SYMBOL_RE = /^[A-Z][A-Z0-9.]{0,9}$/
+const EXPLICIT_TIMEZONE_RE = /(z|[+\-]\d{2}:?\d{2}|(?:\s|t)(utc|gmt))$/i
+const ISO_LOCAL_DATETIME_RE = /^\d{4}-\d{2}-\d{2}t/i
 
 const SYMBOL_KEYS = ["Ticker", "ticker", "Symbol", "symbol"] as const
 const TRANSACTION_DATE_KEYS = [
@@ -119,7 +121,12 @@ function normalizeDate(value: unknown, field: string, details: Record<string, un
     return normalized
   }
 
-  const parsed = new Date(text)
+  const parseInput = EXPLICIT_TIMEZONE_RE.test(text)
+    ? text
+    : ISO_LOCAL_DATETIME_RE.test(text)
+      ? `${text}Z`
+      : `${text} UTC`
+  const parsed = new Date(parseInput)
   if (Number.isNaN(parsed.getTime())) throw new InvalidDateError(field, value, details)
   return parsed.toISOString().slice(0, 10)
 }
