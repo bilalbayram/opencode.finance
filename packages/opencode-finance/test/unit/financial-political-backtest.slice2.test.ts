@@ -46,6 +46,13 @@ describe("financial_political_backtest slice 2", () => {
     expect(aligned.shifted).toBe(true)
   })
 
+  test("fails loudly when anchor date predates first available trading session", () => {
+    const calendar = createTradingCalendar(["2025-01-03", "2025-01-06", "2025-01-07"])
+    expect(() => alignToNextSession(calendar, "2025-01-02")).toThrow(
+      "Input date predates first available trading session: 2025-01-02",
+    )
+  })
+
   test("fails loudly when configured windows cannot be computed", () => {
     const events: PoliticalEvent[] = [
       {

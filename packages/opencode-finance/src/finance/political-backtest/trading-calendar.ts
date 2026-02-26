@@ -63,6 +63,16 @@ export function createTradingCalendar(sessions: readonly IsoDate[]): TradingCale
 export function alignToNextSession(calendar: TradingCalendar, inputDate: IsoDate): TradingSessionAlignment {
   ensureCalendar(calendar)
   const targetDay = toEpochDay(inputDate, "inputDate")
+  const firstEpochDay = calendar.sessionEpochDays[0]
+  if (firstEpochDay === undefined) {
+    throw new TradingCalendarError("Trading calendar cannot be empty")
+  }
+  if (targetDay < firstEpochDay) {
+    throw new SessionAlignmentError(`Input date predates first available trading session: ${inputDate}`, {
+      inputDate,
+      firstSession: calendar.sessions[0],
+    })
+  }
 
   let low = 0
   let high = calendar.sessionEpochDays.length - 1

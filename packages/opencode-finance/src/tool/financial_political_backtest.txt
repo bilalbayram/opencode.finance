@@ -1,14 +1,14 @@
-Run a strict political-trading event-study backtest for a ticker.
+Run a strict political-trading event-study backtest for a ticker or portfolio.
 
 Inputs:
-- ticker (required in v1 slice)
+- ticker (optional; omit to run portfolio mode against stored holdings)
 - optional anchor mode (transaction/report/both)
 - optional forward windows (trading sessions)
 - optional output root override
 
 Behavior:
 - Requires Quiver auth with plan metadata and Tier 1 government-trading entitlement.
-- Loads Congress/Senate/House ticker datasets.
+- Loads Congress/Senate/House ticker datasets for each analyzed scope ticker.
 - Computes event-level forward returns and benchmark-relative results.
 - Writes deterministic artifacts under reports/.
 - Fails loudly when required auth, datasets, or price history are missing.

@@ -122,7 +122,7 @@ function addDays(input: Date, days: number) {
 function parseChartBars(input: { symbol: string; payload: Record<string, unknown> }): PriceBar[] {
   const chart = input.payload.chart as Record<string, unknown> | undefined
   const result = ((chart?.result as Record<string, unknown>[] | undefined) ?? [])[0] ?? {}
-  const timestamps = ((result.timestamp as number[] | undefined) ?? []).filter((item) => Number.isFinite(item))
+  const timestamps = (result.timestamp as unknown[] | undefined) ?? []
   const indicators = (result.indicators as Record<string, unknown> | undefined) ?? {}
   const adjusted = (
     ((indicators.adjclose as Record<string, unknown>[] | undefined)?.[0] as Record<string, unknown> | undefined) ?? {}
@@ -131,12 +131,39 @@ function parseChartBars(input: { symbol: string; payload: Record<string, unknown
     ((indicators.quote as Record<string, unknown>[] | undefined)?.[0] as Record<string, unknown> | undefined) ?? {}
   ).close as Array<number | null | undefined> | undefined
 
+  if (!Array.isArray(timestamps) || timestamps.length === 0) {
+    throw new EventStudyError(`No usable price rows returned for ${input.symbol}.`, "MISSING_PRICE_SERIES", {
+      symbol: input.symbol,
+    })
+  }
+
   const rows: PriceBar[] = []
-  for (const [index, timestamp] of timestamps.entries()) {
+  for (const [index, rawTimestamp] of timestamps.entries()) {
+    if (typeof rawTimestamp !== "number" || !Number.isFinite(rawTimestamp)) {
+      throw new EventStudyError(`Malformed timestamp in Yahoo series for ${input.symbol} at index ${index}.`, "INVALID_PRICE_SERIES", {
+        symbol: input.symbol,
+        row_index: index,
+        timestamp: rawTimestamp,
+      })
+    }
+    const timestamp = rawTimestamp
     const date = new Date(timestamp * 1000)
-    if (Number.isNaN(date.getTime())) continue
+    if (Number.isNaN(date.getTime())) {
+      throw new EventStudyError(`Invalid timestamp date conversion for ${input.symbol} at index ${index}.`, "INVALID_PRICE_SERIES", {
+        symbol: input.symbol,
+        row_index: index,
+        timestamp,
+      })
+    }
     const price = adjusted?.[index] ?? closes?.[index]
-    if (!Number.isFinite(price) || (price ?? 0) <= 0) continue
+    if (!Number.isFinite(price) || (price ?? 0) <= 0) {
+      throw new EventStudyError(`Malformed price in Yahoo series for ${input.symbol} at index ${index}.`, "INVALID_PRICE_SERIES", {
+        symbol: input.symbol,
+        row_index: index,
+        adjusted_close: adjusted?.[index],
+        close: closes?.[index],
+      })
+    }
     rows.push({
       symbol: input.symbol,
       date: date.toISOString().slice(0, 10),

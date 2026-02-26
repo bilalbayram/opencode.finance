@@ -63,6 +63,18 @@ function reportRoot(
   return path.join(root(context), "reports", ticker, date)
 }
 
+function reportExecutionConstraintLines(input: { outputRoot: string; focus: string; quiverSetupHint: string }) {
+  return [
+    "Execution constraints for this `/report` run:",
+    `- Write artifacts only under \`${input.outputRoot}\`.`,
+    ...(input.focus ? [`- Focus area for this run: \`${input.focus}\`.`] : []),
+    '- Use `financial_search` with `coverage: "comprehensive"` for numeric claims.',
+    "- If a numeric field cannot be sourced, set the value to `unknown` (never `N/A`).",
+    `- If Quiver setup is missing, instruct: ${input.quiverSetupHint}.`,
+    '- After markdown artifacts, ask one PDF export question; if accepted, call `report_pdf` with `subcommand: "report"`.',
+  ]
+}
+
 function parseArgs(input: string) {
   const raw = input.match(/(?:[^\s"'`]+|"[^"]*"|'[^']*'|`[^`]*`)/g) ?? []
   return raw.map((arg) => arg.replace(/^['"`]|['"`]$/g, ""))
@@ -267,15 +279,11 @@ export const OpenCodeFinancePlugin: Plugin = async (input) => {
         const focus = parts.slice(1).join(" ").trim()
         output.parts.push({
           type: "text",
-          text: [
-            "Execution constraints for this `/report` run:",
-            `- Write artifacts only under \`${reportRoot(ticker, input)}\`.`,
-            ...(focus ? [`- Focus area for this run: \`${focus}\`.`] : []),
-            "- Use `financial_search` with `coverage: \"comprehensive\"` for numeric claims.",
-            "- If a numeric field cannot be sourced, set the value to `unknown` (never `N/A`).",
-            `- If Quiver setup is missing, instruct: ${login("quiver-quant")}.`,
-            "- After markdown artifacts, ask one PDF export question; if accepted, call `report_pdf`.",
-          ].join("\n"),
+          text: reportExecutionConstraintLines({
+            outputRoot: reportRoot(ticker, input),
+            focus,
+            quiverSetupHint: login("quiver-quant"),
+          }).join("\n"),
         } as any)
         return
       }
@@ -382,5 +390,9 @@ export const QuiverQuantAuthPlugin = authPlugin({
     }
   },
 })
+
+export const OpenCodeFinanceInternal = {
+  reportExecutionConstraintLines,
+}
 
 export default OpenCodeFinancePlugin

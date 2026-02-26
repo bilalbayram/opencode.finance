@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { InvalidDateError, InvalidQuiverRowError, MissingRequiredFieldError } from "./errors"
 import type { IsoDate, NormalizedPoliticalEvent, PoliticalTransactionType, QuiverPoliticalRowInput } from "./types"
 
@@ -42,6 +43,41 @@ const TYPE_KEYS = ["Transaction", "transaction", "TransactionType", "transaction
 function asText(value: unknown): string {
   if (value === null || value === undefined) return ""
   return String(value).trim()
+}
+
+function normalizeFieldKey(input: string): string {
+  return input
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+}
+
+function normalizeStableValue(input: unknown): unknown {
+  if (input === null || input === undefined) return ""
+  if (typeof input === "string") return asText(input).toLowerCase()
+  if (typeof input === "number") return Number.isFinite(input) ? input : ""
+  if (typeof input === "boolean") return input
+  if (input instanceof Date) return Number.isNaN(input.getTime()) ? "" : input.toISOString()
+  if (Array.isArray(input)) return input.map((item) => normalizeStableValue(item))
+  if (typeof input === "object") {
+    const row = input as Record<string, unknown>
+    const out: Record<string, unknown> = {}
+    for (const key of Object.keys(row).sort()) {
+      out[normalizeFieldKey(key)] = normalizeStableValue(row[key])
+    }
+    return out
+  }
+  return asText(String(input)).toLowerCase()
+}
+
+function stableStringify(input: unknown): string {
+  return JSON.stringify(normalizeStableValue(input))
+}
+
+function stableHash(input: string): string {
+  return createHash("sha256").update(input).digest("hex")
 }
 
 function fieldLookup(row: Record<string, unknown>) {
@@ -165,7 +201,19 @@ export function normalizeQuiverRow(input: {
   const actorRaw = pickField(input.row, ACTOR_KEYS)
   const actor = actorRaw === undefined || actorRaw === null ? null : asText(actorRaw) || null
   const transactionType = normalizeTransactionType(pickField(input.row, TYPE_KEYS))
-  const eventId = `${input.datasetId}:${symbol}:${input.rowIndex}:${transactionDate ?? "none"}:${reportDate ?? "none"}`
+  const rowFingerprint = stableHash(stableStringify(input.row))
+  const eventIdentity = stableHash(
+    stableStringify({
+      dataset_id: input.datasetId,
+      symbol,
+      transaction_date: transactionDate ?? "",
+      report_date: reportDate ?? "",
+      actor: actor ?? "",
+      transaction_type: transactionType,
+      row_fingerprint: rowFingerprint,
+    }),
+  )
+  const eventId = `${input.datasetId}:${symbol}:${eventIdentity}`
 
   return {
     eventId,
