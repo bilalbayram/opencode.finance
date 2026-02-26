@@ -10,6 +10,7 @@ import { PortfolioTool } from "./tool/portfolio"
 import { PortfolioReportTool } from "./tool/portfolio_report"
 import { ReportInsidersTool } from "./tool/report_insiders"
 import { ReportGovernmentTradingTool } from "./tool/report_government_trading"
+import { ReportDarkpoolAnomalyTool } from "./tool/report_darkpool_anomaly"
 import { ReportPdfTool } from "./tool/report_pdf"
 import { Env } from "./env"
 import PROMPT_FINANCE from "./prompt/finance.txt"
@@ -115,6 +116,7 @@ async function buildTools() {
     PortfolioReportTool,
     ReportInsidersTool,
     ReportGovernmentTradingTool,
+    ReportDarkpoolAnomalyTool,
     ReportPdfTool,
   ]
   const out: Hooks["tool"] = {}
@@ -271,7 +273,7 @@ export const OpenCodeFinancePlugin: Plugin = async (input) => {
           "- Use `financial_search` with `coverage: \"comprehensive\"` for numeric claims.",
           "- If a numeric field cannot be sourced, set the value to `unknown` (never `N/A`).",
           `- If Quiver setup is missing, instruct: ${login("quiver-quant")}.`,
-          '- After markdown artifacts, ask one PDF export question; if accepted, call `report_pdf` with `subcommand: "report"`.',
+          "- After markdown artifacts, ask one PDF export question; if accepted, call `report_pdf` with `subcommand: "report"`.",
         ].join("\n"),
       } as any)
     },

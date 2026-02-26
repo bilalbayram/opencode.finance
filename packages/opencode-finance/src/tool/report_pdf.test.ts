@@ -1,7 +1,7 @@
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { describe, expect, it } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { ReportPdfInternal, ReportPdfTool } from "./report_pdf"
 
 const COVER = {
@@ -55,6 +55,39 @@ const GOVERNMENT_ARTIFACTS = {
   dataJson: JSON.stringify({ summary: { current_events: 10 } }, null, 2),
 }
 
+const DARKPOOL_ARTIFACTS = {
+  report: "# Darkpool Anomaly Report\n\nMode: ticker\nSignificance threshold (|z|): 3\n",
+  dashboard:
+    "# Darkpool Anomaly Dashboard\n\n| Ticker | Date | Metric | Current | Baseline | |z| | Severity | Direction | State |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| AAPL | 2026-02-25 | OffExchangeVolume | 120 | 100 | 3.2 | medium | positive | new |\n",
+  assumptions: JSON.stringify(
+    {
+      detection_parameters: {
+        lookback_days: 120,
+        min_samples: 30,
+        significance_threshold: 3,
+      },
+    },
+    null,
+    2,
+  ),
+  evidenceMarkdown: "# Darkpool Raw Evidence\n",
+  evidenceJson: JSON.stringify(
+    {
+      tickers: ["AAPL"],
+      anomalies: [
+        { key: "AAPL:DPI", ticker: "AAPL", severity: "medium", direction: "positive", abs_z_score: 3.2 },
+        { key: "MSFT:DPI", ticker: "MSFT", severity: "high", direction: "negative", abs_z_score: 3.1 },
+      ],
+      transitions: [
+        { state: "new", key: "AAPL:DPI", current: { key: "AAPL:DPI" } },
+        { state: "persisted", key: "MSFT:DPI", current: { key: "MSFT:DPI" } },
+      ],
+    },
+    null,
+    2,
+  ),
+}
+
 function toolContext(worktree: string) {
   return {
     directory: worktree,
@@ -66,21 +99,21 @@ function toolContext(worktree: string) {
 }
 
 describe("report_pdf subcommand parsing", () => {
-  it("rejects missing subcommand with friendly message", () => {
+  test("rejects missing subcommand with friendly message", () => {
     expect(() => ReportPdfInternal.parsePdfSubcommand(undefined)).toThrow(
-      /subcommand is required\. Use one of: report, government-trading/,
+      /subcommand is required\. Use one of: report, government-trading, darkpool-anomaly/,
     )
   })
 
-  it("rejects invalid subcommand with friendly message", () => {
+  test("rejects invalid subcommand with friendly message", () => {
     expect(() => ReportPdfInternal.parsePdfSubcommand("unknown")).toThrow(
-      /subcommand must be one of: report, government-trading/,
+      /subcommand must be one of: report, government-trading, darkpool-anomaly/,
     )
   })
 })
 
 describe("report_pdf government-trading profile", () => {
-  it("accepts valid government-trading artifact set", () => {
+  test("accepts valid government-trading artifact set", () => {
     const issues = ReportPdfInternal.qualityIssuesGovernmentTrading({
       report: GOVERNMENT_ARTIFACTS.report,
       dashboard: GOVERNMENT_ARTIFACTS.dashboard,
@@ -93,7 +126,7 @@ describe("report_pdf government-trading profile", () => {
     expect(issues).toEqual([])
   })
 
-  it("fails when required delta metric is missing", () => {
+  test("fails when required delta metric is missing", () => {
     const issues = ReportPdfInternal.qualityIssuesGovernmentTrading({
       report: GOVERNMENT_ARTIFACTS.report,
       dashboard: GOVERNMENT_ARTIFACTS.dashboard.replace("| updated_events | 1 |", ""),
@@ -106,7 +139,7 @@ describe("report_pdf government-trading profile", () => {
     expect(issues.some((item) => item.includes("updated_events"))).toBeTrue()
   })
 
-  it("fails when normalized-events.json is invalid", () => {
+  test("fails when normalized-events.json is invalid", () => {
     const issues = ReportPdfInternal.qualityIssuesGovernmentTrading({
       report: GOVERNMENT_ARTIFACTS.report,
       dashboard: GOVERNMENT_ARTIFACTS.dashboard,
@@ -120,8 +153,34 @@ describe("report_pdf government-trading profile", () => {
   })
 })
 
+describe("report_pdf darkpool profile", () => {
+  test("accepts valid darkpool artifact set", () => {
+    const issues = ReportPdfInternal.qualityIssuesDarkpool({
+      report: DARKPOOL_ARTIFACTS.report,
+      dashboard: DARKPOOL_ARTIFACTS.dashboard,
+      assumptions: DARKPOOL_ARTIFACTS.assumptions,
+      evidenceMarkdown: DARKPOOL_ARTIFACTS.evidenceMarkdown,
+      evidenceJson: DARKPOOL_ARTIFACTS.evidenceJson,
+    })
+
+    expect(issues).toEqual([])
+  })
+
+  test("fails when evidence json is missing transitions", () => {
+    const issues = ReportPdfInternal.qualityIssuesDarkpool({
+      report: DARKPOOL_ARTIFACTS.report,
+      dashboard: DARKPOOL_ARTIFACTS.dashboard,
+      assumptions: DARKPOOL_ARTIFACTS.assumptions,
+      evidenceMarkdown: DARKPOOL_ARTIFACTS.evidenceMarkdown,
+      evidenceJson: JSON.stringify({ tickers: [], anomalies: [] }),
+    })
+
+    expect(issues.some((item) => item.includes("transitions"))).toBeTrue()
+  })
+})
+
 describe("report_pdf report profile", () => {
-  it("keeps comprehensive quality gate strict", () => {
+  test("keeps comprehensive quality gate strict", () => {
     const issues = ReportPdfInternal.qualityIssuesBySubcommand({
       subcommand: "report",
       info: COVER,
@@ -136,7 +195,7 @@ describe("report_pdf report profile", () => {
 })
 
 describe("report_pdf section plans", () => {
-  it("government-trading section plan order is dashboard-first", () => {
+  test("government-trading section plan order is dashboard-first", () => {
     const plan = ReportPdfInternal.sectionPlanForSubcommand("government-trading", {
       report: GOVERNMENT_ARTIFACTS.report,
       dashboard: GOVERNMENT_ARTIFACTS.dashboard,
@@ -154,7 +213,12 @@ describe("report_pdf section plans", () => {
     ])
   })
 
-  it("report section plan remains unchanged", () => {
+  test("darkpool section plan order is dashboard-first", () => {
+    const plan = ReportPdfInternal.sectionPlanForSubcommand("darkpool-anomaly", DARKPOOL_ARTIFACTS)
+    expect(plan.map((item) => item.title)).toEqual(["Dashboard", "Full Report", "Evidence", "Assumptions"])
+  })
+
+  test("report section plan remains unchanged", () => {
     const plan = ReportPdfInternal.sectionPlanForSubcommand("report", {
       report: "# Report\n",
       dashboard: "# Dashboard\n",
@@ -164,18 +228,46 @@ describe("report_pdf section plans", () => {
   })
 })
 
+describe("report_pdf darkpool cover extraction", () => {
+  test("parses transitions and ranks anomalies by severity then abs z", () => {
+    const parsed = ReportPdfInternal.extractDarkpoolCoverData(DARKPOOL_ARTIFACTS)
+    expect(parsed.transitions).toEqual({ new: 1, persisted: 1, severity_change: 0, resolved: 0 })
+    expect(parsed.topAnomalies[0]).toEqual({
+      ticker: "MSFT",
+      severity: "high",
+      direction: "negative",
+      absZ: 3.1,
+      state: "persisted",
+    })
+  })
+
+  test("fails predictably on malformed evidence payload", () => {
+    expect(() =>
+      ReportPdfInternal.extractDarkpoolCoverData({
+        ...DARKPOOL_ARTIFACTS,
+        evidenceJson: JSON.stringify({ transitions: "bad" }),
+      }),
+    ).toThrow(/`evidence\.json` must include `transitions` array\./)
+  })
+})
+
 describe("report_pdf root hint parsing", () => {
-  it("extracts scope/run id for government-trading roots", () => {
+  test("extracts scope/run id for government-trading roots", () => {
     const hints = ReportPdfInternal.defaultRootHints(
       "/tmp/reports/government-trading/ticker/AAPL/2026-02-26__00-00-00.000Z",
       "government-trading",
     )
     expect(hints).toEqual({ ticker: "AAPL", date: "2026-02-26__00-00-00.000Z" })
   })
+
+  test("extracts ticker/date for darkpool roots", () => {
+    const hints = ReportPdfInternal.defaultRootHints("/tmp/reports/AAPL/2026-02-25/darkpool-anomaly", "darkpool-anomaly")
+    expect(hints).toEqual({ ticker: "AAPL", date: "2026-02-25" })
+  })
 })
 
 describe("ReportPdfTool execution", () => {
-  it("generates PDF for government-trading artifacts", async () => {
+  test("generates PDF for government-trading artifacts", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "gov-pdf-subcommand-"))
     try {
       await Promise.all([

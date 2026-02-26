@@ -74,12 +74,20 @@ export const FINANCE_SLASH_COMMANDS: FinanceSlashCommand[] = [
       "Provide a high-level market summary using available finance sources. If the user passes a specific region or index, tailor the summary. Keep uncertainty explicit when data is missing.",
   },
   {
+    name: "financial-darkpool-anomaly",
+    description: "Detect statistically significant off-exchange (darkpool) anomalies",
+    hints: ["$1"],
+    aliases: ["darkpool-anomaly"],
+    template:
+      'Generate darkpool anomaly analysis with strict statistical criteria.\n\nExecution rules:\n1) If "$1" exists, call `report_darkpool_anomaly` with `{ ticker: "$1" }`.\n2) If "$1" is missing, call `portfolio` with `{ action: "list" }`.\n3) If holdings exist, call `report_darkpool_anomaly` in portfolio mode with `{}`.\n4) If holdings are empty, stop and ask for a ticker using `/financial-darkpool-anomaly <ticker>`.\n5) Then provide a concise in-chat summary with:\n   - mode (`ticker` or `portfolio`)\n   - Quiver plan used\n   - anomaly counts by transition (`new`, `persisted`, `severity_change`, `resolved`)\n   - top anomalies with severity, direction, and z-score\n6) Point directly to artifact files from tool output:\n   - `report.md`\n   - `dashboard.md`\n   - `assumptions.json`\n   - `evidence.json`\n   - `evidence.md`\n\nAfter markdown artifacts are written, ask exactly one user question with the `question` tool:\n- header: `PDF Export`\n- question: `Generate a polished PDF report now?`\n- options:\n  1) `Yes (Recommended)` - Generate a polished PDF in the report directory.\n  2) `No` - Skip PDF generation.\n- custom: `false`\n\nIf user selects `Yes (Recommended)`, call `report_pdf` with:\n- `subcommand`: `darkpool-anomaly`\n- `outputRoot`: darkpool artifact `output_root` from `report_darkpool_anomaly`\n- `filename`: `<ticker-or-portfolio>-<YYYY-MM-DD>-darkpool-anomaly.pdf`\n\nIf `question` is unavailable in this client context, skip PDF export and complete analysis normally.\n\nDo not provide investment advice.',
+  },
+  {
     name: "report-pdf",
     description: "Export finance artifacts to PDF using a profile-specific quality gate",
     hints: ["$1", "$2", "$3"],
     aliases: ["pdf-report"],
     template:
-      'Export an existing artifact directory to PDF.\n\nUsage:\n- `/report-pdf report <output_root> [filename]`\n- `/report-pdf government-trading <output_root> [filename]`\n\nExecution rules:\n1) Require `$1` to be exactly `report` or `government-trading`; if invalid, stop and show usage.\n2) Require `$2` as output directory path.\n3) Call `report_pdf` with:\n   - `subcommand`: `$1`\n   - `outputRoot`: `$2`\n   - `filename`: `$3` when provided\n4) Return the generated PDF path and profile used.\n\nDo not invent paths.',
+      'Export an existing artifact directory to PDF.\n\nUsage:\n- `/report-pdf report <output_root> [filename]`\n- `/report-pdf government-trading <output_root> [filename]`\n\nExecution rules:\n1) Require `$1` to be exactly `report` or `government-trading` or `darkpool-anomaly`; if invalid, stop and show usage.\n2) Require `$2` as output directory path.\n3) Call `report_pdf` with:\n   - `subcommand`: `$1`\n   - `outputRoot`: `$2`\n   - `filename`: `$3` when provided\n4) Return the generated PDF path and profile used.\n\nDo not invent paths.',
   },
   {
     name: "report",
