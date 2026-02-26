@@ -11,6 +11,7 @@ import { PortfolioReportTool } from "./tool/portfolio_report"
 import { ReportInsidersTool } from "./tool/report_insiders"
 import { ReportGovernmentTradingTool } from "./tool/report_government_trading"
 import { ReportDarkpoolAnomalyTool } from "./tool/report_darkpool_anomaly"
+import { FinancialPoliticalBacktestTool } from "./tool/financial_political_backtest"
 import { ReportPdfTool } from "./tool/report_pdf"
 import { Env } from "./env"
 import PROMPT_FINANCE from "./prompt/finance.txt"
@@ -60,6 +61,18 @@ function reportRoot(
   date = new Date().toISOString().slice(0, 10),
 ) {
   return path.join(root(context), "reports", ticker, date)
+}
+
+function reportExecutionConstraintLines(input: { outputRoot: string; focus: string; quiverSetupHint: string }) {
+  return [
+    "Execution constraints for this `/report` run:",
+    `- Write artifacts only under \`${input.outputRoot}\`.`,
+    ...(input.focus ? [`- Focus area for this run: \`${input.focus}\`.`] : []),
+    '- Use `financial_search` with `coverage: "comprehensive"` for numeric claims.',
+    "- If a numeric field cannot be sourced, set the value to `unknown` (never `N/A`).",
+    `- If Quiver setup is missing, instruct: ${input.quiverSetupHint}.`,
+    '- After markdown artifacts, ask one PDF export question; if accepted, call `report_pdf` with `subcommand: "report"`.',
+  ]
 }
 
 function parseArgs(input: string) {
@@ -117,6 +130,7 @@ async function buildTools() {
     ReportInsidersTool,
     ReportGovernmentTradingTool,
     ReportDarkpoolAnomalyTool,
+    FinancialPoliticalBacktestTool,
     ReportPdfTool,
   ]
   const out: Hooks["tool"] = {}
@@ -232,48 +246,88 @@ export const OpenCodeFinancePlugin: Plugin = async (input) => {
       output.system.push(PROMPT_FINANCE)
     },
     async "command.execute.before"(event, output) {
-      if (event.command !== "report") return
+      if (event.command === "report") {
+        const parts = parseArgs(event.arguments)
+        const ticker = (parts[0] ?? "").trim().toUpperCase()
+        if (!ticker) {
+          throw new Error("Missing ticker for `/report`. Usage: `/report <ticker> [focus]`.\nRun `/onboard` first.")
+        }
 
-      const parts = parseArgs(event.arguments)
-      const ticker = (parts[0] ?? "").trim().toUpperCase()
-      if (!ticker) {
-        throw new Error("Missing ticker for `/report`. Usage: `/report <ticker> [focus]`.\nRun `/onboard` first.")
+        await ensureSkill(input)
+        const missing = await missingRequired()
+        if (missing.length > 0) {
+          throw new Error(
+            [
+              `Missing required dependencies for \`/report\`: ${missing.join(", ")}.`,
+              ...missing.map((id) => `- ${login(id)}`),
+              "Run `/onboard` to complete setup.",
+            ].join("\n"),
+          )
+        }
+
+        const recommended = await missingRecommended()
+        if (recommended.length > 0) {
+          await input.client.tui.showToast({
+            body: {
+              variant: "warning",
+              message: `Optional providers missing: ${recommended.join(", ")}. Coverage may be reduced.`,
+              duration: 9000,
+            },
+          })
+        }
+
+        const focus = parts.slice(1).join(" ").trim()
+        output.parts.push({
+          type: "text",
+          text: reportExecutionConstraintLines({
+            outputRoot: reportRoot(ticker, input),
+            focus,
+            quiverSetupHint: login("quiver-quant"),
+          }).join("\n"),
+        } as any)
+        return
       }
 
-      await ensureSkill(input)
-      const missing = await missingRequired()
-      if (missing.length > 0) {
+      if (event.command !== "financial-political-backtest") return
+
+      const parts = parseArgs(event.arguments)
+      const first = (parts[0] ?? "").trim()
+      const firstLower = first.toLowerCase()
+      const tickerCandidate =
+        first && firstLower !== "portfolio" && /^[a-z0-9.\-]+$/i.test(first) && !first.includes(",") ? first.toUpperCase() : ""
+      const mode = tickerCandidate ? "ticker" : "portfolio"
+      const date = new Date().toISOString().slice(0, 10)
+      const scopeRoot = path.join(
+        root(input),
+        "reports",
+        "political-backtest",
+        mode === "ticker" ? tickerCandidate : "portfolio",
+        date,
+      )
+
+      const quiver = await credential("quiver-quant")
+      if (!quiver) {
         throw new Error(
           [
-            `Missing required dependencies for \`/report\`: ${missing.join(", ")}.`,
-            ...missing.map((id) => `- ${login(id)}`),
+            "Missing required dependency for `/financial-political-backtest`: quiver-quant.",
+            `- ${login("quiver-quant")}`,
             "Run `/onboard` to complete setup.",
           ].join("\n"),
         )
       }
 
-      const recommended = await missingRecommended()
-      if (recommended.length > 0) {
-        await input.client.tui.showToast({
-          body: {
-            variant: "warning",
-            message: `Optional providers missing: ${recommended.join(", ")}. Coverage may be reduced.`,
-            duration: 9000,
-          },
-        })
-      }
-
-      const focus = parts.slice(1).join(" ").trim()
       output.parts.push({
         type: "text",
         text: [
-          "Execution constraints for this `/report` run:",
-          `- Write artifacts only under \`${reportRoot(ticker, input)}\`.`,
-          ...(focus ? [`- Focus area for this run: \`${focus}\`.`] : []),
-          "- Use `financial_search` with `coverage: \"comprehensive\"` for numeric claims.",
-          "- If a numeric field cannot be sourced, set the value to `unknown` (never `N/A`).",
-          `- If Quiver setup is missing, instruct: ${login("quiver-quant")}.`,
-          '- After markdown artifacts, ask one PDF export question; if accepted, call `report_pdf` with `subcommand: "report"`.',
+          "Execution constraints for this `/financial-political-backtest` run:",
+          `- Inferred mode: \`${mode}\`.`,
+          `- Write artifacts under \`${scopeRoot}\`.`,
+          "- Enforce strict failure for missing required datasets, windows, or benchmark series.",
+          "- Keep outputs analytic and non-advisory.",
+          "- After successful markdown artifacts, ask exactly one PDF question using `question`.",
+          '- If user chooses `Yes (Recommended)`, call `report_pdf` with `subcommand: "political-backtest"` and the tool-reported output root.',
+          "- If user chooses `No`, skip PDF export.",
+          "- If `report_pdf` fails, report the explicit error and treat the run as failed.",
         ].join("\n"),
       } as any)
     },
@@ -342,5 +396,9 @@ export const QuiverQuantAuthPlugin = authPlugin({
     }
   },
 })
+
+export const OpenCodeFinanceInternal = {
+  reportExecutionConstraintLines,
+}
 
 export default OpenCodeFinancePlugin

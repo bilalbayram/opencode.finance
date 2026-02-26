@@ -14,7 +14,7 @@ const TOP = PAGE_HEIGHT - HEADER_HEIGHT - 30
 const BOTTOM = 56
 const FOOTER_TEXT = "opencode.finance"
 const FOOTER_URL = "https://opencode.finance"
-const PDF_SUBCOMMAND = ["report", "government-trading", "darkpool-anomaly"] as const
+const PDF_SUBCOMMAND = ["report", "government-trading", "darkpool-anomaly", "political-backtest"] as const
 const PDF_SUBCOMMAND_SET = new Set<string>(PDF_SUBCOMMAND)
 const PDF_SUBCOMMAND_LABEL = PDF_SUBCOMMAND.join(", ")
 
@@ -102,6 +102,8 @@ type LoadedArtifacts = {
   dataJson?: string
   evidenceMarkdown?: string
   evidenceJson?: string
+  aggregateJson?: string
+  comparisonJson?: string
 }
 
 type PdfSection = {
@@ -140,6 +142,42 @@ type DarkpoolCoverData = {
   transitions: DarkpoolTransitionCounts
   significantCount: number
   topAnomalies: DarkpoolTopAnomaly[]
+}
+
+type PoliticalBacktestAggregate = {
+  anchorKind: "transaction" | "report"
+  windowSessions: number
+  benchmarkSymbol: string
+  sampleSize: number
+  hitRatePercent: number
+  meanReturnPercent: number
+  medianReturnPercent: number
+  meanExcessReturnPercent: number
+}
+
+type PoliticalBacktestComparison = {
+  firstRun: boolean
+  eventCurrent: number
+  eventBaseline: number
+  newEvents: number
+  removedEvents: number
+  conclusionChanges: number
+  baselineGeneratedAt: string
+  baselineOutputRoot: string
+}
+
+type PoliticalBacktestCoverData = {
+  scope: string
+  mode: "ticker" | "portfolio" | "unknown"
+  windowsLabel: string
+  benchmarkCount: number
+  eventCount: number
+  bestAggregateLabel: string
+  bestMeanExcess: number
+  sampleDeltaLabel: string
+  sampleDelta: number
+  topSignals: string[]
+  longitudinalHighlights: string[]
 }
 
 type Row =
@@ -376,6 +414,44 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
     }
   }
 
+  if (subcommand === "political-backtest") {
+    return {
+      buildCoverData: ({ artifacts, hints }) => politicalBacktestCoverData(artifacts, hints),
+      enrichCover: async ({ info }) => info,
+      renderCover: ({ pdf, info, font, icon }) => renderReportCover(pdf, info, font, icon),
+      sectionPlan: (artifacts) => [
+        {
+          title: "Dashboard",
+          content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
+        },
+        {
+          title: "Full Report",
+          content: artifacts.report,
+        },
+        {
+          title: "Aggregate Results",
+          content: aggregateResultsMarkdown(artifacts.aggregateJson),
+        },
+        {
+          title: "Longitudinal Comparison",
+          content: comparisonMarkdown(artifacts.comparisonJson),
+        },
+        {
+          title: "Assumptions",
+          content: assumptionsMarkdown(artifacts.assumptions),
+        },
+      ],
+      qualityGate: ({ artifacts }) =>
+        qualityIssuesPoliticalBacktest({
+          report: artifacts.report,
+          dashboard: artifacts.dashboard,
+          assumptions: artifacts.assumptions,
+          aggregateJson: artifacts.aggregateJson,
+          comparisonJson: artifacts.comparisonJson,
+        }),
+    }
+  }
+
   return {
     buildCoverData: ({ artifacts, hints }) => reportCoverData(artifacts.report, artifacts.dashboard, hints),
     enrichCover: async ({ info, ctx }) => enrichCover(info, ctx),
@@ -405,6 +481,9 @@ function artifactReadPatterns(root: string, subcommand: PdfSubcommand) {
   const assumptions = path.join(root, "assumptions.json")
   if (subcommand === "report") {
     return [report, dashboard, assumptions]
+  }
+  if (subcommand === "political-backtest") {
+    return [report, dashboard, assumptions, path.join(root, "aggregate-results.json"), path.join(root, "comparison.json")]
   }
   if (subcommand === "government-trading") {
     return [
@@ -443,6 +522,16 @@ async function loadArtifacts(root: string, subcommand: PdfSubcommand): Promise<L
     }
   }
 
+  if (subcommand === "political-backtest") {
+    return {
+      report: await readRequired(report),
+      dashboard: await readRequired(dashboard),
+      assumptions: await readRequired(assumptions),
+      aggregateJson: await readRequired(path.join(root, "aggregate-results.json")),
+      comparisonJson: await readRequired(path.join(root, "comparison.json")),
+    }
+  }
+
   return {
     report: await readRequired(report),
     dashboard: await readRequired(dashboard),
@@ -453,7 +542,7 @@ async function loadArtifacts(root: string, subcommand: PdfSubcommand): Promise<L
 }
 
 function defaultRootHints(root: string, subcommand: PdfSubcommand): RootHints {
-  if (subcommand === "report") {
+  if (subcommand === "report" || subcommand === "political-backtest") {
     return {
       ticker: tickerLabel(path.basename(path.dirname(root))),
       date: path.basename(root),
@@ -645,6 +734,315 @@ function darkpoolCoverData(report: string, dashboard: string | undefined, hints:
   }
 }
 
+function politicalBacktestCoverData(artifacts: LoadedArtifacts, hints: RootHints): Cover {
+  const headingScope =
+    artifacts.report.match(/^#\s+Political Event Backtest:\s*([^\n]+)$/im)?.[1]?.trim() ??
+    artifacts.dashboard?.match(/^#\s+Political Backtest Dashboard:\s*([^\n]+)$/im)?.[1]?.trim()
+  const title =
+    artifacts.report
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.startsWith("# "))
+      ?.replace(/^#\s+/, "")
+      .trim() ?? `Political Event Backtest: ${headingScope ?? hints.ticker}`
+  const scope = tickerLabel(headingScope ?? hints.ticker)
+  const date = lineValue(artifacts.report, "Generated at") ?? hints.date
+  const details = extractPoliticalBacktestCoverData({
+    report: artifacts.report,
+    dashboard: artifacts.dashboard,
+    aggregateJson: artifacts.aggregateJson,
+    comparisonJson: artifacts.comparisonJson,
+  })
+
+  const summary = trim(
+    plainText(executiveSummary(artifacts.report)) || "Political-trading event-study results from markdown and raw aggregate artifacts.",
+    1400,
+  )
+  const metrics = [
+    metric("Mode / Scope", `${details.mode} / ${details.scope}`),
+    metric("Events Analyzed", formatNumber(details.eventCount, 0)),
+    metric("Benchmarks", formatNumber(details.benchmarkCount, 0)),
+    metric("Windows", details.windowsLabel),
+    metric("Best Mean Excess", `${signed(details.bestMeanExcess, 3)}%`),
+    metric("Sample Delta", details.sampleDeltaLabel),
+  ]
+
+  return {
+    title,
+    ticker: scope,
+    date,
+    sector: "political backtest",
+    headquarters: "unknown",
+    icon: "",
+    score: "BKT",
+    band: "NEUTRAL",
+    summary,
+    positive: pick(details.topSignals, ["No aggregate signals parsed from aggregate-results.json."]),
+    negative: pick(details.longitudinalHighlights, ["Longitudinal comparison details unavailable."]),
+    metrics,
+  }
+}
+
+function extractPoliticalBacktestCoverData(input: {
+  report: string
+  dashboard?: string
+  aggregateJson?: string
+  comparisonJson?: string
+}): PoliticalBacktestCoverData {
+  const reportScope = input.report.match(/^#\s+Political Event Backtest:\s*([^\n]+)$/im)?.[1]?.trim()
+  const dashboardScope = input.dashboard?.match(/^#\s+Political Backtest Dashboard:\s*([^\n]+)$/im)?.[1]?.trim()
+  const scope = tickerLabel(reportScope ?? dashboardScope ?? "unknown")
+  const rawMode = (lineValue(input.report, "Mode") ?? lineValue(input.dashboard, "Mode") ?? "unknown").toLowerCase()
+  const mode: PoliticalBacktestCoverData["mode"] = rawMode === "ticker" ? "ticker" : rawMode === "portfolio" ? "portfolio" : "unknown"
+  const windowsLabel = lineValue(input.report, "Windows (sessions)") ?? "unknown"
+  const benchmarkLine = lineValue(input.report, "Benchmarks") ?? lineValue(input.dashboard, "Benchmarks") ?? ""
+  const benchmarkCount = [
+    ...new Set(
+      benchmarkLine
+        .split(",")
+        .map((item) => tickerLabel(item))
+        .filter((item) => !isUnknown(item)),
+    ),
+  ].length
+  const eventLabel = lineValue(input.report, "Political events analyzed") ?? lineValue(input.dashboard, "Events")
+  const eventCountRaw = firstNumber(eventLabel)
+  const eventCount = Number.isFinite(eventCountRaw) ? Math.max(0, Math.round(eventCountRaw)) : 0
+
+  const aggregates = parsePoliticalBacktestAggregates(input.aggregateJson)
+  const ranked = aggregates.toSorted((a, b) => {
+    if (b.meanExcessReturnPercent !== a.meanExcessReturnPercent) return b.meanExcessReturnPercent - a.meanExcessReturnPercent
+    return b.sampleSize - a.sampleSize
+  })
+  const best = ranked[0]
+  const bestMeanExcess = best?.meanExcessReturnPercent ?? Number.NaN
+  const bestAggregateLabel = best
+    ? `${best.anchorKind} ${best.windowSessions}D vs ${best.benchmarkSymbol} (${signed(best.meanExcessReturnPercent, 3)}%)`
+    : "unknown"
+  const topSignals = ranked.slice(0, 3).map((item) => {
+    return `${item.anchorKind} ${item.windowSessions}D vs ${item.benchmarkSymbol}: mean excess ${signed(item.meanExcessReturnPercent, 3)}% (hit ${formatNumber(item.hitRatePercent, 2)}%, n=${formatNumber(item.sampleSize, 0)})`
+  })
+
+  const comparison = parsePoliticalBacktestComparison(input.comparisonJson)
+  const sampleDelta = comparison
+    ? comparison.firstRun
+      ? comparison.eventCurrent
+      : comparison.eventCurrent - comparison.eventBaseline
+    : Number.NaN
+  const sampleDeltaLabel = comparison
+    ? comparison.firstRun
+      ? `+${formatNumber(comparison.eventCurrent, 0)} (first run)`
+      : `${signed(sampleDelta, 0)} (current ${formatNumber(comparison.eventCurrent, 0)} vs baseline ${formatNumber(comparison.eventBaseline, 0)})`
+    : "unknown"
+  const longitudinalHighlights = comparison
+    ? comparison.firstRun
+      ? [
+          "First run baseline: none.",
+          `Events in scope: ${formatNumber(comparison.eventCurrent, 0)}.`,
+          `New events: ${formatNumber(comparison.newEvents, 0)}.`,
+        ]
+      : [
+          `Baseline: ${comparison.baselineGeneratedAt} (${comparison.baselineOutputRoot}).`,
+          `New events: ${formatNumber(comparison.newEvents, 0)}, removed events: ${formatNumber(comparison.removedEvents, 0)}.`,
+          `Conclusion changes: ${formatNumber(comparison.conclusionChanges, 0)}.`,
+        ]
+    : ["Longitudinal comparison payload could not be parsed."]
+
+  return {
+    scope,
+    mode,
+    windowsLabel,
+    benchmarkCount,
+    eventCount,
+    bestAggregateLabel,
+    bestMeanExcess,
+    sampleDeltaLabel,
+    sampleDelta,
+    topSignals,
+    longitudinalHighlights,
+  }
+}
+
+function parsePoliticalBacktestAggregates(input: string | undefined): PoliticalBacktestAggregate[] {
+  if (!input) return []
+  const parsed = parseJson(input)
+  if (!Array.isArray(parsed)) return []
+
+  return parsed
+    .map((item) => asRecord(item))
+    .flatMap((row) => {
+      if (!row) return []
+      const anchor = asOptionalText(row.anchor_kind)?.toLowerCase()
+      const benchmark = asOptionalText(row.benchmark_symbol)
+      const windowSessions = toFiniteNumber(row.window_sessions)
+      const sampleSize = toFiniteNumber(row.sample_size)
+      const hitRatePercent = toFiniteNumber(row.hit_rate_percent)
+      const meanReturnPercent = toFiniteNumber(row.mean_return_percent)
+      const medianReturnPercent = toFiniteNumber(row.median_return_percent)
+      const meanExcessReturnPercent = toFiniteNumber(row.mean_excess_return_percent)
+
+      if ((anchor !== "transaction" && anchor !== "report") || !benchmark) return []
+      if (
+        !Number.isFinite(windowSessions) ||
+        !Number.isFinite(sampleSize) ||
+        !Number.isFinite(hitRatePercent) ||
+        !Number.isFinite(meanReturnPercent) ||
+        !Number.isFinite(medianReturnPercent) ||
+        !Number.isFinite(meanExcessReturnPercent)
+      ) {
+        return []
+      }
+
+      return [
+        {
+          anchorKind: anchor,
+          windowSessions: Math.round(windowSessions),
+          benchmarkSymbol: tickerLabel(benchmark),
+          sampleSize,
+          hitRatePercent,
+          meanReturnPercent,
+          medianReturnPercent,
+          meanExcessReturnPercent,
+        },
+      ]
+    })
+}
+
+function parsePoliticalBacktestComparison(input: string | undefined): PoliticalBacktestComparison | null {
+  if (!input) return null
+  const root = asRecord(parseJson(input))
+  if (!root) return null
+  if (typeof root.first_run !== "boolean") return null
+  const eventSample = asRecord(root.event_sample)
+  if (!eventSample) return null
+
+  const eventCurrent = toFiniteNumber(eventSample.current)
+  const eventBaseline = toFiniteNumber(eventSample.baseline)
+  if (!Number.isFinite(eventCurrent) || !Number.isFinite(eventBaseline)) return null
+
+  const newEvents = Array.isArray(eventSample.new_events) ? eventSample.new_events.length : Number.NaN
+  const removedEvents = Array.isArray(eventSample.removed_events) ? eventSample.removed_events.length : Number.NaN
+  if (!Number.isFinite(newEvents) || !Number.isFinite(removedEvents)) return null
+
+  const baseline = asRecord(root.baseline)
+  if (!root.first_run && !baseline) return null
+  const baselineGeneratedAt = baseline ? (asOptionalText(baseline.generated_at) ?? "unknown") : "none"
+  const baselineOutputRoot = baseline ? (asOptionalText(baseline.output_root) ?? "unknown") : "none"
+  const conclusionChanges = Array.isArray(root.conclusion_changes) ? root.conclusion_changes.length : 0
+
+  return {
+    firstRun: root.first_run,
+    eventCurrent,
+    eventBaseline,
+    newEvents,
+    removedEvents,
+    conclusionChanges,
+    baselineGeneratedAt,
+    baselineOutputRoot,
+  }
+}
+
+function aggregateResultsMarkdown(input: string | undefined) {
+  if (!input) return textOrUnknown(input, "aggregate-results.json")
+  const rows = parsePoliticalBacktestAggregates(input)
+  if (!rows.length) return input
+
+  const best = rows.toSorted((a, b) => b.meanExcessReturnPercent - a.meanExcessReturnPercent)[0]
+  const totalSamples = rows.reduce((acc, row) => acc + row.sampleSize, 0)
+  const lines = [
+    "## Aggregate Results (aggregate-results.json)",
+    "",
+    `- Aggregate rows: ${formatNumber(rows.length, 0)}`,
+    `- Combined sample size: ${formatNumber(totalSamples, 0)}`,
+    `- Best mean excess row: ${best ? `${best.anchorKind} ${best.windowSessions}D vs ${best.benchmarkSymbol} (${signed(best.meanExcessReturnPercent, 3)}%)` : "unknown"}`,
+    "",
+    "| Anchor | Window | Benchmark | Sample | Hit Rate % | Median Return % | Mean Return % | Mean Excess % |",
+    "| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |",
+    ...rows.map((row) => {
+      return `| ${row.anchorKind} | ${row.windowSessions} | ${row.benchmarkSymbol} | ${formatNumber(row.sampleSize, 0)} | ${formatNumber(row.hitRatePercent, 2)} | ${formatNumber(row.medianReturnPercent, 3)} | ${formatNumber(row.meanReturnPercent, 3)} | ${formatNumber(row.meanExcessReturnPercent, 3)} |`
+    }),
+  ]
+  return lines.join("\n")
+}
+
+function comparisonMarkdown(input: string | undefined) {
+  if (!input) return textOrUnknown(input, "comparison.json")
+  const parsed = asRecord(parseJson(input))
+  if (!parsed) return input
+  const comparison = parsePoliticalBacktestComparison(input)
+  if (!comparison) return input
+
+  const lines = [
+    "## Longitudinal Comparison (comparison.json)",
+    "",
+    `- First run: ${comparison.firstRun ? "yes" : "no"}`,
+    `- Event sample: current ${formatNumber(comparison.eventCurrent, 0)}, baseline ${formatNumber(comparison.eventBaseline, 0)}, new ${formatNumber(comparison.newEvents, 0)}, removed ${formatNumber(comparison.removedEvents, 0)}.`,
+  ]
+
+  if (!comparison.firstRun) {
+    lines.push(`- Baseline generated at: ${comparison.baselineGeneratedAt}`)
+    lines.push(`- Baseline output root: ${comparison.baselineOutputRoot}`)
+    lines.push(`- Sample delta: ${signed(comparison.eventCurrent - comparison.eventBaseline, 0)}`)
+  }
+
+  const driftRows = Array.isArray(parsed.aggregate_drift)
+    ? parsed.aggregate_drift
+        .map((item) => asRecord(item))
+        .flatMap((row) => {
+          if (!row) return []
+          const anchorKind = asOptionalText(row.anchor_kind)
+          const benchmarkSymbol = asOptionalText(row.benchmark_symbol)
+          const windowSessions = toFiniteNumber(row.window_sessions)
+          const sampleDelta = toFiniteNumber(row.sample_delta)
+          const hitRateDelta = toFiniteNumber(row.hit_rate_delta)
+          const meanExcessDelta = toFiniteNumber(row.mean_excess_delta)
+          if (!anchorKind || !benchmarkSymbol) return []
+          if (
+            !Number.isFinite(windowSessions) ||
+            !Number.isFinite(sampleDelta) ||
+            !Number.isFinite(hitRateDelta) ||
+            !Number.isFinite(meanExcessDelta)
+          ) {
+            return []
+          }
+          return [{ anchorKind, benchmarkSymbol, windowSessions, sampleDelta, hitRateDelta, meanExcessDelta }]
+        })
+    : []
+  if (driftRows.length) {
+    lines.push("")
+    lines.push("| Anchor | Window | Benchmark | Sample Delta | Hit Rate Delta | Mean Excess Delta |")
+    lines.push("| --- | ---: | --- | ---: | ---: | ---: |")
+    driftRows.forEach((row) => {
+      lines.push(
+        `| ${row.anchorKind} | ${formatNumber(row.windowSessions, 0)} | ${row.benchmarkSymbol} | ${signed(row.sampleDelta, 0)} | ${signed(row.hitRateDelta, 3)} | ${signed(row.meanExcessDelta, 3)} |`,
+      )
+    })
+  }
+
+  return lines.join("\n")
+}
+
+function lineValue(markdown: string | undefined, label: string) {
+  if (!markdown) return
+  const pattern = new RegExp(`^\\s*(?:[-*]\\s+)?${escape(label)}:\\s*([^\\n]+)$`, "im")
+  const hit = markdown.match(pattern)?.[1]
+  if (!hit) return
+  return cleanInline(hit).trim()
+}
+
+function firstNumber(input: string | undefined) {
+  if (!input) return Number.NaN
+  const hit = input.match(/[-+]?\d+(?:\.\d+)?/)?.[0]
+  if (!hit) return Number.NaN
+  return toFiniteNumber(hit)
+}
+
+function signed(input: number, digits = 3) {
+  if (!Number.isFinite(input)) return "unknown"
+  if (input === 0) return "0"
+  const sign = input > 0 ? "+" : "-"
+  return `${sign}${formatNumber(Math.abs(input), digits)}`
+}
+
 async function enrichCover(info: Cover, ctx: Tool.Context): Promise<Cover> {
   if (info.icon.trim() && !isUnknown(info.icon)) return info
   if (!info.ticker.trim() || isUnknown(info.ticker)) return info
@@ -826,6 +1224,8 @@ function qualityIssuesBySubcommand(input: {
   dataJson?: string
   evidenceMarkdown?: string
   evidenceJson?: string
+  aggregateJson?: string
+  comparisonJson?: string
 }) {
   if (input.subcommand === "government-trading") {
     return qualityIssuesGovernmentTrading({
@@ -845,6 +1245,16 @@ function qualityIssuesBySubcommand(input: {
       assumptions: input.assumptions,
       evidenceMarkdown: input.evidenceMarkdown,
       evidenceJson: input.evidenceJson,
+    })
+  }
+
+  if (input.subcommand === "political-backtest") {
+    return qualityIssuesPoliticalBacktest({
+      report: input.report,
+      dashboard: input.dashboard,
+      assumptions: input.assumptions,
+      aggregateJson: input.aggregateJson,
+      comparisonJson: input.comparisonJson,
     })
   }
 
@@ -925,6 +1335,129 @@ function qualityIssuesGovernmentTrading(input: {
     const parsed = parseJson(input.dataJson)
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       issues.push("`data.json` must be a valid JSON object.")
+    }
+  }
+
+  return issues
+}
+
+function qualityIssuesPoliticalBacktest(input: {
+  report: string
+  dashboard?: string
+  assumptions?: string
+  aggregateJson?: string
+  comparisonJson?: string
+}) {
+  const issues: string[] = []
+  if (!/^#\s+Political Event Backtest:\s*[^\n]+$/im.test(input.report)) {
+    issues.push("`report.md` must include heading `# Political Event Backtest: <scope>`.")
+  }
+
+  const requiredReportMetadata = ["Generated at", "Mode", "Tickers", "Anchor Mode", "Windows (sessions)", "Benchmarks"] as const
+  for (const label of requiredReportMetadata) {
+    if (!lineValue(input.report, label)) {
+      issues.push(`\`report.md\` is missing metadata line \`${label}: ...\`.`)
+    }
+  }
+
+  if (!input.dashboard) {
+    issues.push("Missing required political-backtest artifact `dashboard.md`.")
+  } else {
+    const tables = tableBlocks(input.dashboard)
+    const hasAggregateTable = tables.some((table) => {
+      const head = table.head.map((cell) => normalize(cell))
+      const required = ["anchor", "window", "benchmark", "sample", "hit rate", "median return", "mean return", "mean excess"]
+      return required.every((item) => head.some((cell) => cell.includes(item)))
+    })
+    if (!hasAggregateTable) {
+      issues.push(
+        "`dashboard.md` must include aggregate table headers: Anchor, Window, Benchmark, Sample, Hit Rate %, Median Return %, Mean Return %, Mean Excess %.",
+      )
+    }
+  }
+
+  if (!input.assumptions) {
+    issues.push("Missing required political-backtest artifact `assumptions.json`.")
+  } else {
+    const assumptions = asRecord(parseJson(input.assumptions))
+    if (!assumptions) {
+      issues.push("`assumptions.json` must be valid JSON object.")
+    } else if (assumptions.workflow !== "financial_political_backtest") {
+      issues.push("`assumptions.json.workflow` must equal `financial_political_backtest`.")
+    }
+  }
+
+  if (!input.aggregateJson) {
+    issues.push("Missing required political-backtest artifact `aggregate-results.json`.")
+  } else {
+    const payload = parseJson(input.aggregateJson)
+    if (!Array.isArray(payload) || payload.length === 0) {
+      issues.push("`aggregate-results.json` must be a non-empty JSON array.")
+    } else {
+      const invalid = payload.find((item) => {
+        const row = asRecord(item)
+        if (!row) return true
+        const anchor = asOptionalText(row.anchor_kind)?.toLowerCase()
+        const benchmark = asOptionalText(row.benchmark_symbol)
+        const numericKeys = [
+          "window_sessions",
+          "sample_size",
+          "hit_rate_percent",
+          "mean_return_percent",
+          "median_return_percent",
+          "mean_excess_return_percent",
+        ] as const
+        if ((anchor !== "transaction" && anchor !== "report") || !benchmark) return true
+        return numericKeys.some((key) => !Number.isFinite(toFiniteNumber(row[key])))
+      })
+      if (invalid) {
+        issues.push(
+          "`aggregate-results.json` rows must include valid anchor_kind, benchmark_symbol, window_sessions, sample_size, and numeric hit/return/excess metrics.",
+        )
+      }
+    }
+  }
+
+  if (!input.comparisonJson) {
+    issues.push("Missing required political-backtest artifact `comparison.json`.")
+  } else {
+    const root = asRecord(parseJson(input.comparisonJson))
+    if (!root) {
+      issues.push("`comparison.json` must be a valid JSON object.")
+    } else {
+      if (typeof root.first_run !== "boolean") {
+        issues.push("`comparison.json` must include boolean `first_run`.")
+      }
+      const eventSample = asRecord(root.event_sample)
+      if (!eventSample) {
+        issues.push("`comparison.json` must include object `event_sample`.")
+      } else {
+        if (!Number.isFinite(toFiniteNumber(eventSample.current))) {
+          issues.push("`comparison.json.event_sample.current` must be numeric.")
+        }
+        if (!Number.isFinite(toFiniteNumber(eventSample.baseline))) {
+          issues.push("`comparison.json.event_sample.baseline` must be numeric.")
+        }
+        if (!Array.isArray(eventSample.new_events)) {
+          issues.push("`comparison.json.event_sample.new_events` must be an array.")
+        }
+        if (!Array.isArray(eventSample.removed_events)) {
+          issues.push("`comparison.json.event_sample.removed_events` must be an array.")
+        }
+      }
+      if (root.first_run === false) {
+        const baseline = asRecord(root.baseline)
+        if (!baseline) {
+          issues.push("`comparison.json.baseline` must exist when `first_run` is false.")
+        } else {
+          if (!asOptionalText(baseline.output_root)) {
+            issues.push("`comparison.json.baseline.output_root` is required when `first_run` is false.")
+          }
+          if (!asOptionalText(baseline.generated_at)) {
+            issues.push("`comparison.json.baseline.generated_at` is required when `first_run` is false.")
+          }
+        }
+      }
     }
   }
 
@@ -2522,7 +3055,9 @@ export const ReportPdfInternal = {
   reportCoverData,
   governmentTradingCoverData,
   darkpoolCoverData,
+  politicalBacktestCoverData,
   extractDarkpoolCoverData,
+  extractPoliticalBacktestCoverData,
   defaultRootHints,
   directionalScore,
   listUnder,
@@ -2533,4 +3068,5 @@ export const ReportPdfInternal = {
   qualityIssuesReport,
   qualityIssuesGovernmentTrading,
   qualityIssuesDarkpool,
+  qualityIssuesPoliticalBacktest,
 }
