@@ -52,6 +52,7 @@ workflow_version: 4
        - `No` - skip PDF generation
      - `custom: false`
    - if user picks `Yes (Recommended)`, call `report_pdf` with:
+     - `subcommand`: `report`
      - `outputRoot`: `reports/<ticker>/<report_date>/`
      - `filename`: `<ticker>-<report_date>.pdf`
    - if `question` is unavailable in this client context, skip PDF export and complete the report.

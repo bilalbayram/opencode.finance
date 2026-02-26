@@ -14,6 +14,9 @@ const TOP = PAGE_HEIGHT - HEADER_HEIGHT - 30
 const BOTTOM = 56
 const FOOTER_TEXT = "opencode.finance"
 const FOOTER_URL = "https://opencode.finance"
+const PDF_SUBCOMMAND = ["report", "government-trading"] as const
+const PDF_SUBCOMMAND_SET = new Set<string>(PDF_SUBCOMMAND)
+const PDF_SUBCOMMAND_LABEL = PDF_SUBCOMMAND.join(", ")
 
 const THEME = {
   paper: hex("#F6F8FB"),
@@ -36,13 +39,17 @@ const THEME = {
   monoBg: hex("#EEF3F8"),
 }
 
+const subcommandSchema = z.string(`subcommand is required. Use one of: ${PDF_SUBCOMMAND_LABEL}`)
+
 const parameters = z.object({
+  subcommand: subcommandSchema.describe("Workflow profile for quality gates and artifact requirements."),
   outputRoot: z.string().describe("Report directory path, usually reports/<TICKER>/<YYYY-MM-DD>/"),
   filename: z.string().optional().describe("Optional PDF filename. Defaults to <TICKER>-<DATE>.pdf inside outputRoot."),
 })
 
 type Font = Awaited<ReturnType<PDFDocument["embedFont"]>>
 type Image = Awaited<ReturnType<PDFDocument["embedPng"]>>
+type PdfSubcommand = (typeof PDF_SUBCOMMAND)[number]
 
 type FontSet = {
   regular: Font
@@ -53,7 +60,6 @@ type FontSet = {
 }
 
 type Tone = "positive" | "risk" | "neutral"
-type ReportProfile = "equity" | "government_trading"
 
 type Metric = {
   label: string
@@ -80,6 +86,34 @@ type SectionStyle = {
   mono?: boolean
   size?: number
   line?: number
+}
+
+type RootHints = {
+  ticker: string
+  date: string
+}
+
+type LoadedArtifacts = {
+  report: string
+  dashboard?: string
+  assumptions?: string
+  normalizedEventsJson?: string
+  deltaEventsJson?: string
+  dataJson?: string
+}
+
+type PdfSection = {
+  title: string
+  content: string
+  style?: SectionStyle
+}
+
+type PdfProfile = {
+  buildCoverData: (input: { artifacts: LoadedArtifacts; hints: RootHints }) => Cover
+  enrichCover: (input: { info: Cover; ctx: Tool.Context }) => Promise<Cover>
+  renderCover: (input: { pdf: PDFDocument; info: Cover; font: FontSet; icon?: Image; artifacts: LoadedArtifacts }) => void
+  sectionPlan: (artifacts: LoadedArtifacts) => PdfSection[]
+  qualityGate: (input: { info: Cover; artifacts: LoadedArtifacts }) => string[]
 }
 
 type Row =
@@ -114,6 +148,8 @@ export const ReportPdfTool = Tool.define("report_pdf", {
   description: DESCRIPTION,
   parameters,
   async execute(params, ctx) {
+    const subcommand = parsePdfSubcommand(params.subcommand)
+    const profile = getPdfProfile(subcommand)
     const root = path.isAbsolute(params.outputRoot)
       ? path.normalize(params.outputRoot)
       : path.resolve(ctx.directory, params.outputRoot)
@@ -121,35 +157,32 @@ export const ReportPdfTool = Tool.define("report_pdf", {
 
     await assertExternalDirectory(ctx, root, { kind: "directory" })
 
-    const report = path.join(root, "report.md")
-    const dashboard = path.join(root, "dashboard.md")
-    const assumptions = path.join(root, "assumptions.json")
-
     await ctx.ask({
       permission: "read",
-      patterns: [report, dashboard, assumptions],
+      patterns: artifactReadPatterns(root, subcommand),
       always: ["*"],
       metadata: {
         outputRoot: root,
+        subcommand,
       },
     })
 
-    const reportText = await readRequired(report)
-    const dashboardText = await readOptional(dashboard)
-    const assumptionsText = await readOptional(assumptions)
-    const profile = detectReportProfile(reportText, dashboardText)
+    const artifacts = await loadArtifacts(root, subcommand)
+    const hints = defaultRootHints(root, subcommand)
 
-    let info = coverData(reportText, dashboardText, root)
-    if (profile === "equity") {
-      info = await enrichCover(info, ctx)
-    }
-    const quality = qualityIssues({
-      profile,
-      info,
-      report: reportText,
-      dashboard: dashboardText,
-      assumptions: assumptionsText,
+    let info = profile.buildCoverData({
+      artifacts,
+      hints,
     })
+    info = await profile.enrichCover({
+      info,
+      ctx,
+    })
+    const quality = profile.qualityGate({
+      info,
+      artifacts,
+    })
+
     if (quality.length) {
       throw new Error(
         ["PDF export blocked by institutional quality gate:", ...quality.map((item) => `- ${item}`)].join("\n"),
@@ -178,10 +211,16 @@ export const ReportPdfTool = Tool.define("report_pdf", {
     }
     const icon = await embedIcon(pdf, info.icon)
 
-    cover(pdf, info, font, icon)
-    section(pdf, font, info, "Full Report", reportText)
-    section(pdf, font, info, "Dashboard", textOrUnknown(dashboardText, "dashboard.md"))
-    section(pdf, font, info, "Assumptions", assumptionsMarkdown(assumptionsText))
+    profile.renderCover({
+      pdf,
+      info,
+      font,
+      icon,
+      artifacts,
+    })
+    for (const item of profile.sectionPlan(artifacts)) {
+      section(pdf, font, info, item.title, item.content, item.style)
+    }
 
     const pages = pdf.getPages()
     pages.forEach((page, index) => {
@@ -217,18 +256,155 @@ async function readRequired(filepath: string) {
   throw new Error(`Missing required report artifact: ${filepath}`)
 }
 
-function coverData(report: string, dashboard: string | undefined, root: string): Cover {
+function parsePdfSubcommand(input: unknown): PdfSubcommand {
+  if (input === undefined || input === null) {
+    throw new Error(`subcommand is required. Use one of: ${PDF_SUBCOMMAND_LABEL}`)
+  }
+  if (typeof input !== "string" || !input.trim()) {
+    throw new Error(`subcommand is required. Use one of: ${PDF_SUBCOMMAND_LABEL}`)
+  }
+  const value = input.trim()
+  if (!PDF_SUBCOMMAND_SET.has(value)) {
+    throw new Error(`subcommand must be one of: ${PDF_SUBCOMMAND_LABEL}`)
+  }
+  return value as PdfSubcommand
+}
+
+function sectionPlanForSubcommand(subcommand: PdfSubcommand, artifacts: LoadedArtifacts): PdfSection[] {
+  return getPdfProfile(subcommand).sectionPlan(artifacts)
+}
+
+function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
+  if (subcommand === "government-trading") {
+    return {
+      buildCoverData: ({ artifacts, hints }) => governmentTradingCoverData(artifacts.report, artifacts.dashboard, hints),
+      enrichCover: async ({ info }) => info,
+      renderCover: ({ pdf, info, font, icon }) => cover(pdf, info, font, icon),
+      sectionPlan: (artifacts) => [
+        {
+          title: "Dashboard",
+          content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
+        },
+        {
+          title: "Full Report",
+          content: artifacts.report,
+        },
+        {
+          title: "Assumptions",
+          content: assumptionsMarkdown(artifacts.assumptions),
+        },
+        {
+          title: "Delta Events",
+          content: jsonArtifactContent(artifacts.deltaEventsJson, "delta-events.json"),
+          style: { mono: true, size: 9, line: 12 },
+        },
+        {
+          title: "Normalized Events",
+          content: jsonArtifactContent(artifacts.normalizedEventsJson, "normalized-events.json"),
+          style: { mono: true, size: 9, line: 12 },
+        },
+      ],
+      qualityGate: ({ artifacts }) =>
+        qualityIssuesGovernmentTrading({
+          report: artifacts.report,
+          dashboard: artifacts.dashboard,
+          assumptions: artifacts.assumptions,
+          normalizedEventsJson: artifacts.normalizedEventsJson,
+          deltaEventsJson: artifacts.deltaEventsJson,
+          dataJson: artifacts.dataJson,
+        }),
+    }
+  }
+
+  return {
+    buildCoverData: ({ artifacts, hints }) => reportCoverData(artifacts.report, artifacts.dashboard, hints),
+    enrichCover: async ({ info, ctx }) => enrichCover(info, ctx),
+    renderCover: ({ pdf, info, font, icon }) => cover(pdf, info, font, icon),
+    sectionPlan: (artifacts) => [
+      {
+        title: "Full Report",
+        content: artifacts.report,
+      },
+      {
+        title: "Dashboard",
+        content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
+      },
+      {
+        title: "Assumptions",
+        content: assumptionsMarkdown(artifacts.assumptions),
+      },
+    ],
+    qualityGate: ({ info, artifacts }) =>
+      qualityIssuesReport(info, artifacts.report, artifacts.dashboard, artifacts.assumptions),
+  }
+}
+
+function artifactReadPatterns(root: string, subcommand: PdfSubcommand) {
+  const report = path.join(root, "report.md")
+  const dashboard = path.join(root, "dashboard.md")
+  const assumptions = path.join(root, "assumptions.json")
+  if (subcommand === "report") {
+    return [report, dashboard, assumptions]
+  }
+  return [
+    report,
+    dashboard,
+    assumptions,
+    path.join(root, "normalized-events.json"),
+    path.join(root, "delta-events.json"),
+    path.join(root, "data.json"),
+  ]
+}
+
+async function loadArtifacts(root: string, subcommand: PdfSubcommand): Promise<LoadedArtifacts> {
+  const report = path.join(root, "report.md")
+  const dashboard = path.join(root, "dashboard.md")
+  const assumptions = path.join(root, "assumptions.json")
+
+  if (subcommand === "report") {
+    return {
+      report: await readRequired(report),
+      dashboard: await readOptional(dashboard),
+      assumptions: await readOptional(assumptions),
+    }
+  }
+
+  return {
+    report: await readRequired(report),
+    dashboard: await readRequired(dashboard),
+    assumptions: await readRequired(assumptions),
+    normalizedEventsJson: await readRequired(path.join(root, "normalized-events.json")),
+    deltaEventsJson: await readRequired(path.join(root, "delta-events.json")),
+    dataJson: await readRequired(path.join(root, "data.json")),
+  }
+}
+
+function defaultRootHints(root: string, subcommand: PdfSubcommand): RootHints {
+  if (subcommand === "report") {
+    return {
+      ticker: tickerLabel(path.basename(path.dirname(root))),
+      date: path.basename(root),
+    }
+  }
+
+  return {
+    ticker: tickerLabel(path.basename(path.dirname(root))),
+    date: path.basename(root),
+  }
+}
+
+function reportCoverData(report: string, dashboard: string | undefined, hints: RootHints): Cover {
   const title =
     report
       .split("\n")
       .map((line) => line.trim())
       .find((line) => line.startsWith("# "))
       ?.replace(/^#\s+/, "")
-      .trim() ?? `${tickerLabel(path.basename(path.dirname(root)))} Research Report`
+      .trim() ?? `${hints.ticker} Research Report`
   const tickerLine = field(report, "Ticker")
   const dateLine = field(report, "Report Date")
-  const ticker = tickerLabel(tickerLine ?? path.basename(path.dirname(root)))
-  const date = dateLine ?? path.basename(root)
+  const ticker = tickerLabel(tickerLine ?? hints.ticker)
+  const date = dateLine ?? hints.date
   const sector = field(report, "Sector") ?? tableRow(report, "Sector")?.[1] ?? tableRow(dashboard, "Sector")?.[1] ?? "unknown"
   const headquarters =
     field(report, "Headquarters") ??
@@ -290,6 +466,48 @@ function coverData(report: string, dashboard: string | undefined, root: string):
     summary,
     positive: pick(positive, ["unknown"]),
     negative: pick(negative, ["unknown"]),
+    metrics,
+  }
+}
+
+function governmentTradingCoverData(report: string, dashboard: string | undefined, hints: RootHints): Cover {
+  const title =
+    report
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.startsWith("# "))
+      ?.replace(/^#\s+/, "")
+      .trim() ?? "Government Trading Report"
+
+  const scope = report.match(/^-+\s*scope:\s*(.+)$/im)?.[1]?.trim() ?? hints.ticker
+  const generatedAt = report.match(/^-+\s*generated_at:\s*([^\n]+)/im)?.[1]?.trim() ?? hints.date
+  const runId = report.match(/^-+\s*run_id:\s*([^\n]+)/im)?.[1]?.trim() ?? hints.date
+  const mode = report.match(/^-+\s*mode:\s*(.+)$/im)?.[1]?.trim() ?? "unknown"
+
+  const summary = trim(plainText(executiveSummary(report)), 1400)
+  const ticker = tickerLabel(scope)
+  const date = generatedAt
+  const metrics = [
+    metric("Mode", mode),
+    metric("Scope", scope),
+    metric("Current Events", metricValue(dashboard, [/^current_events$/i]) ?? "unknown"),
+    metric("New Events", metricValue(dashboard, [/^new_events$/i]) ?? "unknown"),
+    metric("Updated Events", metricValue(dashboard, [/^updated_events$/i]) ?? "unknown"),
+    metric("Run ID", runId),
+  ]
+
+  return {
+    title,
+    ticker,
+    date,
+    sector: "government trading",
+    headquarters: "unknown",
+    icon: "",
+    score: "DELTA",
+    band: "NEUTRAL",
+    summary: summary || "Government trading delta report.",
+    positive: pick(listUnder(report, /persistence trends/i), ["Review persistence trends in report artifacts."]),
+    negative: pick(listUnder(report, /delta preview/i), ["Review delta preview and no-longer-present events."]),
     metrics,
   }
 }
@@ -388,6 +606,13 @@ function textOrUnknown(input: string | undefined, file: string) {
   return `unknown\n\nThe artifact \`${file}\` was not found in outputRoot.`
 }
 
+function jsonArtifactContent(input: string | undefined, file: string) {
+  if (!input) return textOrUnknown(input, file)
+  const parsed = parseJson(input)
+  if (!parsed) return input
+  return JSON.stringify(parsed, null, 2)
+}
+
 function iconUrl(raw: string | undefined, website: string) {
   if (raw && !isUnknown(raw)) return raw.trim()
   const host = website
@@ -450,44 +675,52 @@ function cell(input: string) {
   return cleanInline(input).replace(/\|/g, "\\|").replace(/\n/g, "<br/>")
 }
 
-function detectReportProfile(report: string, dashboard: string | undefined): ReportProfile {
-  const hasGovernmentReportHeading = /^#\s+government trading report\b/im.test(report)
-  const hasGovernmentDashboardHeading = /^#\s+government trading dashboard\b/im.test(dashboard ?? "")
-  return hasGovernmentReportHeading || hasGovernmentDashboardHeading ? "government_trading" : "equity"
-}
-
-function qualityIssues(input: {
-  profile: ReportProfile
+function qualityIssuesBySubcommand(input: {
+  subcommand: PdfSubcommand
   info: Cover
   report: string
   dashboard: string | undefined
   assumptions: string | undefined
+  normalizedEventsJson?: string
+  deltaEventsJson?: string
+  dataJson?: string
 }) {
-  if (input.profile === "government_trading") {
-    return governmentTradingQualityIssues(input.report, input.dashboard)
+  if (input.subcommand === "government-trading") {
+    return qualityIssuesGovernmentTrading({
+      report: input.report,
+      dashboard: input.dashboard,
+      assumptions: input.assumptions,
+      normalizedEventsJson: input.normalizedEventsJson,
+      deltaEventsJson: input.deltaEventsJson,
+      dataJson: input.dataJson,
+    })
   }
-  return equityQualityIssues(input.info, input.report, input.dashboard, input.assumptions)
+  return qualityIssuesReport(input.info, input.report, input.dashboard, input.assumptions)
 }
 
-function governmentTradingQualityIssues(report: string, dashboard: string | undefined) {
+function qualityIssuesGovernmentTrading(input: {
+  report: string
+  dashboard?: string
+  assumptions?: string
+  normalizedEventsJson?: string
+  deltaEventsJson?: string
+  dataJson?: string
+}) {
   const issues: string[] = []
-  if (!/^#\s+government trading report\b/im.test(report)) {
+  if (!/^#\s+government trading report\b/im.test(input.report)) {
     issues.push("Government-trading PDF export requires `report.md` to start with `# Government Trading Report`.")
   }
 
-  if (!dashboard) {
+  if (!input.dashboard) {
     issues.push("Government-trading PDF export requires `dashboard.md`.")
-    return issues
-  }
-
-  if (!/^#\s+government trading dashboard\b/im.test(dashboard)) {
+  } else if (!/^#\s+government trading dashboard\b/im.test(input.dashboard)) {
     issues.push("Government-trading PDF export requires `dashboard.md` to start with `# Government Trading Dashboard`.")
   }
 
   const requiredRunMetadataKeys = ["mode", "scope", "generated_at", "run_id"] as const
   for (const key of requiredRunMetadataKeys) {
     const matcher = new RegExp(`^-\\s*${key}\\s*:`, "im")
-    if (!matcher.test(report)) {
+    if (!matcher.test(input.report)) {
       issues.push(`Government-trading report metadata is missing \`${key}\` in \`report.md\`.`)
     }
   }
@@ -501,15 +734,51 @@ function governmentTradingQualityIssues(report: string, dashboard: string | unde
   ] as const
   for (const metric of requiredDeltaMetrics) {
     const matcher = new RegExp(`\\|\\s*${metric}\\s*\\|`, "i")
-    if (!matcher.test(dashboard)) {
+    if (!matcher.test(input.dashboard ?? "")) {
       issues.push(`Government-trading dashboard is missing delta metric \`${metric}\` in \`dashboard.md\`.`)
+    }
+  }
+
+  if (!input.assumptions) {
+    issues.push("Missing required government-trading artifact `assumptions.json`.")
+  } else {
+    const parsed = parseJson(input.assumptions)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      issues.push("`assumptions.json` must be a valid JSON object.")
+    }
+  }
+
+  if (!input.normalizedEventsJson) {
+    issues.push("Missing required government-trading artifact `normalized-events.json`.")
+  } else {
+    const parsed = parseJson(input.normalizedEventsJson)
+    if (!Array.isArray(parsed)) {
+      issues.push("`normalized-events.json` must be a valid JSON array.")
+    }
+  }
+
+  if (!input.deltaEventsJson) {
+    issues.push("Missing required government-trading artifact `delta-events.json`.")
+  } else {
+    const parsed = parseJson(input.deltaEventsJson)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      issues.push("`delta-events.json` must be a valid JSON object.")
+    }
+  }
+
+  if (!input.dataJson) {
+    issues.push("Missing required government-trading artifact `data.json`.")
+  } else {
+    const parsed = parseJson(input.dataJson)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      issues.push("`data.json` must be a valid JSON object.")
     }
   }
 
   return issues
 }
 
-function equityQualityIssues(info: Cover, report: string, dashboard: string | undefined, assumptions: string | undefined) {
+function qualityIssuesReport(info: Cover, report: string, dashboard: string | undefined, assumptions: string | undefined) {
   const issues: string[] = []
   const critical = ["Stock Price", "YTD Return", "52W Range", "Analyst Consensus"]
   critical.forEach((label) => {
@@ -1643,11 +1912,18 @@ function hex(input: string) {
 }
 
 export const ReportPdfInternal = {
-  coverData,
+  parsePdfSubcommand,
+  getPdfProfile,
+  sectionPlanForSubcommand,
+  reportCoverData,
+  governmentTradingCoverData,
+  defaultRootHints,
   directionalScore,
   listUnder,
   tableRow,
   field,
   assumptionsMarkdown,
-  qualityIssues,
+  qualityIssuesBySubcommand,
+  qualityIssuesReport,
+  qualityIssuesGovernmentTrading,
 }

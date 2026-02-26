@@ -35,7 +35,7 @@ The command writes these artifacts per run in `reports/government-trading/<mode>
 - `delta-events.json`
 - `data.json`
 
-After artifact generation, it asks once whether to export a polished PDF. Selecting `Yes (Recommended)` adds `government-trading-<run_id>.pdf` in the same output directory.
+After artifact generation, it asks once whether to export a polished PDF. Selecting `Yes (Recommended)` calls `report_pdf` with `subcommand: government-trading` and adds `government-trading-<run_id>.pdf` in the same output directory.
 
 ## Migration from a legacy fork
 

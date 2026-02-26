@@ -35,9 +35,9 @@ If your OpenCode config uses `enabled_providers`, this plugin auto-includes its 
 
 ## Commands and tools
 
-The plugin adds finance commands (`/quote`, `/metrics`, `/filings`, `/watch`, `/portfolio`, `/report-portfolio`, `/report-insiders`, `/market`, `/report`, `/onboard`) and tools (`financial_search`, `portfolio`, `portfolio_report`, `report_insiders`, `report_pdf`).
+The plugin adds finance commands (`/quote`, `/metrics`, `/filings`, `/watch`, `/portfolio`, `/report-portfolio`, `/report-insiders`, `/financial-government-trading`, `/report-pdf`, `/market`, `/report`, `/onboard`) and tools (`financial_search`, `portfolio`, `portfolio_report`, `report_insiders`, `report_government_trading`, `report_pdf`).
 
-`/report` is the comprehensive report workflow powered by the `finance-comprehensive-report` skill and mandatory `report_pdf` export after markdown artifacts.
+`/report` is the comprehensive report workflow powered by the `finance-comprehensive-report` skill and profile-based `report_pdf` export (`subcommand: report`) after markdown artifacts.
 
 ## Migration helper
 

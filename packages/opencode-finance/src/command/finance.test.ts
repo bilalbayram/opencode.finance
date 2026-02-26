@@ -28,8 +28,30 @@ describe("FINANCE_SLASH_COMMANDS", () => {
     expect(template).toContain("`No` - Skip PDF generation.")
     expect(template).toContain("custom: `false`")
     expect(template).toContain("If user selects `Yes (Recommended)`, call `report_pdf` with:")
+    expect(template).toContain("`subcommand`: `government-trading`")
     expect(template).toContain("`outputRoot`: `<artifacts.output_root>`")
     expect(template).toContain("`filename`: `government-trading-<run_id>.pdf`")
     expect(template).toContain("If `question` is unavailable in this client context, skip PDF export and complete normally.")
+  })
+
+  it("contains report-pdf slash command template with report and government-trading profiles", () => {
+    const command = getCommand("report-pdf")
+    const template = command.template
+
+    expect(command.aliases).toContain("pdf-report")
+    expect(template).toContain("/report-pdf report <output_root> [filename]")
+    expect(template).toContain("/report-pdf government-trading <output_root> [filename]")
+    expect(template).toContain("Require `$1` to be exactly `report` or `government-trading`")
+    expect(template).toContain("`subcommand`: `$1`")
+    expect(template).toContain("`outputRoot`: `$2`")
+  })
+
+  it("contains report workflow report_pdf subcommand clause", () => {
+    const command = getCommand("report")
+    const template = command.template
+
+    expect(template).toContain("If user selects `Yes (Recommended)`, call `report_pdf` with:")
+    expect(template).toContain("`subcommand`: `report`")
+    expect(template).toContain("`outputRoot`: `reports/$1/<YYYY-MM-DD>/`")
   })
 })
