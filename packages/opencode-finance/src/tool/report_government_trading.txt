@@ -2,7 +2,7 @@ Generate a strict government-trading delta report using Quiver Quant Tier 1 data
 
 Modes:
 - ticker mode: provide `ticker`
-- portfolio mode: omit `ticker` and use stored holdings from `portfolio`
+- no-ticker mode: omit `ticker` to run global datasets; if holdings exist, per-ticker datasets are included automatically
 
 Behavior:
 - Requires Quiver Quant authentication with stored plan metadata

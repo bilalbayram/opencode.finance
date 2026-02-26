@@ -21,6 +21,7 @@ describe("FINANCE_SLASH_COMMANDS", () => {
     const command = getCommand("financial-government-trading")
     const template = command.template
 
+    expect(template).toContain("global mode (no portfolio holdings required)")
     expect(template).toContain("ask exactly one user question with the `question` tool")
     expect(template).toContain("header: `PDF Export`")
     expect(template).toContain("question: `Generate a polished PDF report now?`")

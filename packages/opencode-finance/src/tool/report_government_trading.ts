@@ -103,10 +103,7 @@ function normalizeOutputRoot(context: Pick<Tool.Context, "directory" | "worktree
 
 function normalizeScope(mode: "ticker" | "portfolio", ticker: string, tickers: string[]) {
   if (mode === "ticker") return ticker
-  if (tickers.length === 0) {
-    throw new Error("portfolio mode requires at least one ticker")
-  }
-  return "portfolio"
+  return tickers.length > 0 ? "portfolio" : "global"
 }
 
 function createRunId(generatedAt: string) {
@@ -532,10 +529,6 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
           ? [ticker]
           : await listPortfolio().then((items) => [...new Set(items.map((item) => normalizeTicker(item.ticker)).filter(Boolean))])
 
-      if (mode === "portfolio" && tickers.length === 0) {
-        throw new Error("No holdings found. Add holdings with `/portfolio <ticker> <price_bought> <YYYY-MM-DD>` first.")
-      }
-
       const scope = normalizeScope(mode, ticker, tickers)
       const limitRequested = params.limit ?? 50
       const limitEffective = clampLimit(limitRequested)
@@ -639,7 +632,7 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
         quiver_tier_warning: auth.warning ?? null,
         required_dataset_ids: {
           global: REQUIRED_GLOBAL_IDS,
-          ticker: REQUIRED_TICKER_IDS,
+          ticker: tickers.length > 0 ? REQUIRED_TICKER_IDS : [],
         },
         limit_requested: limitRequested,
         limit_effective: limitEffective,
@@ -649,7 +642,12 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
 
       const rendered = renderGovernmentTradingArtifacts({
         generatedAt,
-        title: mode === "ticker" ? `Government Trading Report (${scope})` : "Government Trading Report (Portfolio)",
+        title:
+          mode === "ticker"
+            ? `Government Trading Report (${scope})`
+            : scope === "global"
+              ? "Government Trading Report (Global)"
+              : "Government Trading Report (Portfolio)",
         assumptions,
         currentEvents: normalizedEvents,
         delta,
@@ -773,7 +771,9 @@ export const ReportGovernmentTradingTool = Tool.define("report_government_tradin
         title:
           mode === "ticker"
             ? `report_government_trading: ${scope}`
-            : `report_government_trading: portfolio (${tickers.length})`,
+            : scope === "global"
+              ? "report_government_trading: global"
+              : `report_government_trading: portfolio (${tickers.length})`,
         metadata,
         output: JSON.stringify(
           {
