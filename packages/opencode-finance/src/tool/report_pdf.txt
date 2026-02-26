@@ -1,7 +1,7 @@
 Generate an institutional-quality PDF file from finance artifacts in one output directory.
 
 Inputs:
-- `subcommand` (required): workflow profile (`report`, `government-trading`, or `darkpool-anomaly`)
+- `subcommand` (required): workflow profile (`report`, `government-trading`, `darkpool-anomaly`, or `political-backtest`)
 - `outputRoot`: artifact directory
 - `filename` (optional): PDF file name to write in `outputRoot`
 
@@ -18,5 +18,9 @@ Behavior:
   - expects darkpool artifacts (`report.md`, `dashboard.md`, `assumptions.json`, `evidence.md`, `evidence.json`)
   - enforces darkpool-specific quality gates
   - uses anomaly-first first page and section flow (Dashboard -> Full Report -> Evidence -> Assumptions)
+- `political-backtest` profile:
+  - expects political backtest artifacts (`report.md`, `dashboard.md`, `assumptions.json`, `aggregate-results.json`, `comparison.json`)
+  - enforces political-backtest-specific quality gates
+  - uses section flow: Dashboard -> Full Report -> Aggregate Results -> Longitudinal Comparison -> Assumptions
 - Creates a polished, summary-first PDF and adds `opencode.finance` footer on every page (clickable link to `https://opencode.finance`)
 - Writes the PDF to disk and returns it as a file attachment

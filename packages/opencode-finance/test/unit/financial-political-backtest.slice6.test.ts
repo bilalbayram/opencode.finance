@@ -19,6 +19,7 @@ describe("financial_political_backtest slice 6", () => {
   test("documents PDF yes-path invocation through report_pdf", () => {
     const template = templateFor("financial-political-backtest")
     expect(template).toContain("If user selects `Yes (Recommended)`, call `report_pdf`")
+    expect(template).toContain("`subcommand`: `political-backtest`")
     expect(template).toContain("`outputRoot`")
     expect(template).toContain("`filename`")
   })
@@ -32,5 +33,11 @@ describe("financial_political_backtest slice 6", () => {
   test("keeps objective non-advisory output requirement", () => {
     const template = templateFor("financial-political-backtest")
     expect(template).toContain("Do not provide investment advice")
+  })
+
+  test("includes political-backtest in /report-pdf explicit usage", () => {
+    const template = templateFor("report-pdf")
+    expect(template).toContain("/report-pdf political-backtest <output_root> [filename]")
+    expect(template).toContain("`political-backtest`")
   })
 })

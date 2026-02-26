@@ -311,7 +311,7 @@ export const OpenCodeFinancePlugin: Plugin = async (input) => {
           "- Enforce strict failure for missing required datasets, windows, or benchmark series.",
           "- Keep outputs analytic and non-advisory.",
           "- After successful markdown artifacts, ask exactly one PDF question using `question`.",
-          "- If user chooses `Yes (Recommended)`, call `report_pdf` with the tool-reported output root.",
+          '- If user chooses `Yes (Recommended)`, call `report_pdf` with `subcommand: "political-backtest"` and the tool-reported output root.',
           "- If user chooses `No`, skip PDF export.",
           "- If `report_pdf` fails, report the explicit error and treat the run as failed.",
         ].join("\n"),
