@@ -280,7 +280,10 @@ QUIVER_PLANS = {
 
 SKILL_NAME = "finance-comprehensive-report"
 SKILL_MANAGED_BY = "opencode-finance"
-SKILL_PATH = Path.home() / ".opencode" / "skills" / SKILL_NAME / "SKILL.md"
+SKILL_DIR_CANDIDATES = [
+    Path.home() / ".agents" / "skills",
+    Path.home() / ".opencode" / "skills",
+]
 
 FINANCE_SKILL_CONTENT = """---
 name: finance-comprehensive-report
@@ -537,7 +540,16 @@ def parse_frontmatter_managed_by(text):
 
 
 def install_finance_skill():
-    target = SKILL_PATH
+    target = None
+    for base in SKILL_DIR_CANDIDATES:
+        candidate = base / SKILL_NAME / "SKILL.md"
+        if candidate.exists():
+            target = candidate
+            break
+
+    if target is None:
+        target = SKILL_DIR_CANDIDATES[0] / SKILL_NAME / "SKILL.md"
+
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(FINANCE_SKILL_CONTENT, encoding="utf-8")
