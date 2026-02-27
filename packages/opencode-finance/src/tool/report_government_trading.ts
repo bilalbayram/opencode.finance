@@ -3,9 +3,7 @@ import path from "path"
 import z from "zod"
 import { Tool } from "./tool"
 import DESCRIPTION from "./report_government_trading.txt"
-import { Auth } from "../auth"
-import { Env } from "../env"
-import { FINANCE_AUTH_PROVIDER } from "../finance/auth-provider"
+import { readQuiverCredential } from "../finance/credentials"
 import { resolveStrictQuiverAuth } from "../finance/quiver-auth"
 import { normalizeTicker } from "../finance/parser"
 import { computeGovernmentTradingDelta } from "../finance/government-trading/delta"
@@ -431,12 +429,11 @@ function buildDashboardMarkdown(input: {
 }
 
 async function resolveAuth() {
-  const auth = await Auth.get("quiver-quant")
-  const env = FINANCE_AUTH_PROVIDER["quiver-quant"].env.map((key) => Env.get(key)).find(Boolean)
+  const state = await readQuiverCredential()
 
   return resolveStrictQuiverAuth({
-    authInfo: auth,
-    envKey: env,
+    authInfo: state.authInfo,
+    envKey: state.envKey,
     loginHint: LOGIN_HINT,
     requiredEndpointTier: "tier_1",
     capabilityLabel: "Tier 1 government-trading datasets required by this report",

@@ -1,5 +1,3 @@
-import { Auth } from "../auth"
-import { Env } from "../env"
 import { FinanceCache } from "./cache"
 import { AlphaVantageProvider } from "./providers/alpha-vantage"
 import { YFinanceProvider } from "./providers/yfinance"
@@ -9,7 +7,6 @@ import { PolygonProvider } from "./providers/polygon"
 import { QuartrProvider } from "./providers/quartr"
 import { QuiverQuantProvider } from "./providers/quiver-quant"
 import { SecEdgarProvider } from "./providers/sec-edgar"
-import { resolveQuiverTierFromAuth } from "./quiver-tier"
 import {
   type FinanceCoverage,
   type FinanceIntent,
@@ -19,7 +16,7 @@ import {
 } from "./types"
 import { parseFinanceQuery } from "./parser"
 import { executeFinanceQuery, type FinanceProvider, type FinanceProviderOptions } from "./provider"
-import { FINANCE_AUTH_PROVIDER, type FinanceAuthProviderID } from "./auth-provider"
+import { resolveProviderApiKey, resolveQuiverProviderCredential } from "./credentials"
 
 interface OrchestratorProviderInput {
   providers?: FinanceProvider[]
@@ -32,49 +29,29 @@ export interface FinancialSearchOptions
   source?: string
 }
 
-async function credential(providerID: FinanceAuthProviderID): Promise<string | undefined> {
-  const env = FINANCE_AUTH_PROVIDER[providerID].env.map((key) => Env.get(key)).find(Boolean)
-  if (env) return env
-  const auth = await Auth.get(providerID)
-  if (auth?.type === "api") return auth.key
-  return undefined
-}
-
-async function quiverCredential() {
-  const env = FINANCE_AUTH_PROVIDER["quiver-quant"].env.map((key) => Env.get(key)).find(Boolean)
-  const auth = await Auth.get("quiver-quant")
-  const key = env ?? (auth?.type === "api" ? auth.key : undefined)
-  if (!key) return
-  const tier = resolveQuiverTierFromAuth(auth).tier
-  return {
-    key,
-    tier,
-  }
-}
-
 export async function createFinanceProviderChain(): Promise<FinanceProvider[]> {
   const providers: FinanceProvider[] = []
   providers.push(new YFinanceProvider())
 
-  const alphavantage = await credential("alphavantage")
+  const alphavantage = await resolveProviderApiKey("alphavantage")
   if (alphavantage) providers.push(new AlphaVantageProvider({ apiKey: alphavantage }))
 
-  const finnhub = await credential("finnhub")
+  const finnhub = await resolveProviderApiKey("finnhub")
   if (finnhub) providers.push(new FinnhubProvider({ apiKey: finnhub }))
 
-  const fmp = await credential("financial-modeling-prep")
+  const fmp = await resolveProviderApiKey("financial-modeling-prep")
   if (fmp) providers.push(new FinancialModelingPrepProvider({ apiKey: fmp }))
 
-  const polygon = await credential("polygon")
+  const polygon = await resolveProviderApiKey("polygon")
   if (polygon) providers.push(new PolygonProvider({ apiKey: polygon }))
 
-  const quartr = await credential("quartr")
+  const quartr = await resolveProviderApiKey("quartr")
   if (quartr) providers.push(new QuartrProvider({ apiKey: quartr }))
 
-  const quiver = await quiverCredential()
+  const quiver = await resolveQuiverProviderCredential()
   if (quiver) providers.push(new QuiverQuantProvider({ apiKey: quiver.key, tier: quiver.tier }))
 
-  const secIdentity = await credential("sec-edgar")
+  const secIdentity = await resolveProviderApiKey("sec-edgar")
   if (secIdentity) providers.push(new SecEdgarProvider({ identity: secIdentity }))
 
   return providers

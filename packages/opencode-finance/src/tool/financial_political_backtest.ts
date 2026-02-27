@@ -4,10 +4,9 @@ import z from "zod"
 import { Tool } from "./tool"
 import DESCRIPTION from "./financial_political_backtest.txt"
 import { Auth } from "../auth"
-import { Env } from "../env"
-import { FINANCE_AUTH_PROVIDER } from "../finance/auth-provider"
 import { normalizeTicker } from "../finance/parser"
 import { listPortfolio } from "../finance/portfolio"
+import { readQuiverCredential } from "../finance/credentials"
 import {
   endpointMinimumPlan,
   quiverPlanLabel,
@@ -269,11 +268,10 @@ function resolveAuthFromState(input: {
 }
 
 async function resolveAuth() {
-  const auth = await Auth.get("quiver-quant")
-  const env = FINANCE_AUTH_PROVIDER["quiver-quant"].env.map((key) => Env.get(key)).find(Boolean)
+  const state = await readQuiverCredential()
   return resolveAuthFromState({
-    auth,
-    env,
+    auth: state.authInfo,
+    env: state.envKey,
   })
 }
 

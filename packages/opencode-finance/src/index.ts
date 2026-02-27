@@ -2,8 +2,8 @@ import fs from "fs/promises"
 import path from "path"
 import z from "zod"
 import { type Plugin, tool as pluginTool, type Hooks } from "@opencode-ai/plugin"
-import { Auth } from "./auth"
 import { FINANCE_AUTH_PROVIDER, type FinanceAuthProviderID } from "./finance/auth-provider"
+import { resolveProviderApiKey } from "./finance/credentials"
 import { FINANCE_SLASH_COMMANDS } from "./command/finance"
 import { FinancialSearchTool } from "./tool/financial_search"
 import { PortfolioTool } from "./tool/portfolio"
@@ -80,23 +80,17 @@ function parseArgs(input: string) {
   return raw.map((arg) => arg.replace(/^['"`]|['"`]$/g, ""))
 }
 
-async function credential(providerID: FinanceAuthProviderID): Promise<string | undefined> {
-  const env = FINANCE_AUTH_PROVIDER[providerID].env
-    .map((key) => Env.get(key)?.trim())
-    .find(Boolean)
-  if (env) return env
-  const auth = await Auth.get(providerID)
-  if (auth?.type === "api") return auth.key
-  return undefined
-}
-
 async function missingRequired() {
-  const checks = await Promise.all(REQUIRED_PROVIDER.map(async (id) => ({ id, ok: Boolean(await credential(id)) })))
+  const checks = await Promise.all(
+    REQUIRED_PROVIDER.map(async (id) => ({ id, ok: Boolean(await resolveProviderApiKey(id, { trim: true })) })),
+  )
   return checks.filter((item) => !item.ok).map((item) => item.id)
 }
 
 async function missingRecommended() {
-  const checks = await Promise.all(RECOMMENDED_PROVIDER.map(async (id) => ({ id, ok: Boolean(await credential(id)) })))
+  const checks = await Promise.all(
+    RECOMMENDED_PROVIDER.map(async (id) => ({ id, ok: Boolean(await resolveProviderApiKey(id, { trim: true })) })),
+  )
   return checks.filter((item) => !item.ok).map((item) => item.id)
 }
 
@@ -305,7 +299,7 @@ export const OpenCodeFinancePlugin: Plugin = async (input) => {
         date,
       )
 
-      const quiver = await credential("quiver-quant")
+      const quiver = await resolveProviderApiKey("quiver-quant", { trim: true })
       if (!quiver) {
         throw new Error(
           [

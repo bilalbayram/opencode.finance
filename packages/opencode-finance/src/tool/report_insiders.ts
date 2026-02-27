@@ -3,11 +3,9 @@ import fs from "fs/promises"
 import z from "zod"
 import { Tool } from "./tool"
 import DESCRIPTION from "./report_insiders.txt"
-import { Auth } from "../auth"
-import { Env } from "../env"
-import { FINANCE_AUTH_PROVIDER } from "../finance/auth-provider"
 import { listPortfolio } from "../finance/portfolio"
 import { normalizeTicker } from "../finance/parser"
+import { readQuiverCredential } from "../finance/credentials"
 import { resolveStrictQuiverAuth } from "../finance/quiver-auth"
 import { endpointMinimumPlan, type QuiverTier } from "../finance/quiver-tier"
 import * as QuiverReport from "../finance/providers/quiver-report"
@@ -279,12 +277,11 @@ function summarizeInsiders(rows: Record<string, unknown>[]) {
 }
 
 async function resolveAuth() {
-  const auth = await Auth.get("quiver-quant")
-  const env = FINANCE_AUTH_PROVIDER["quiver-quant"].env.map((key) => Env.get(key)).find(Boolean)
+  const state = await readQuiverCredential()
 
   return resolveStrictQuiverAuth({
-    authInfo: auth,
-    envKey: env,
+    authInfo: state.authInfo,
+    envKey: state.envKey,
     loginHint: LOGIN_HINT,
     requiredEndpointTier: "tier_1",
     capabilityLabel: "Tier 1 insider/government datasets required by this report",

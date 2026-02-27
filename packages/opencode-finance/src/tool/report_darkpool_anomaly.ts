@@ -3,11 +3,9 @@ import path from "path"
 import z from "zod"
 import { Tool } from "./tool"
 import DESCRIPTION from "./report_darkpool_anomaly.txt"
-import { Auth } from "../auth"
-import { Env } from "../env"
-import { FINANCE_AUTH_PROVIDER } from "../finance/auth-provider"
 import { listPortfolio } from "../finance/portfolio"
 import { normalizeTicker } from "../finance/parser"
+import { readQuiverCredential } from "../finance/credentials"
 import {
   endpointMinimumPlan,
   quiverPlanLabel,
@@ -287,8 +285,9 @@ function renderEvidenceMarkdown(input: {
 }
 
 async function resolveAuth() {
-  const auth = await Auth.get("quiver-quant")
-  const env = FINANCE_AUTH_PROVIDER["quiver-quant"].env.map((key) => Env.get(key)).find(Boolean)
+  const state = await readQuiverCredential()
+  const auth = state.authInfo
+  const env = state.envKey
 
   if (!auth || auth.type !== "api") {
     if (env) {
