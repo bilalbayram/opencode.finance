@@ -2,7 +2,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { describe, expect, test } from "bun:test"
-import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial_political_backtest"
+import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial-political-backtest"
 
 describe("financial_political_backtest slice 7", () => {
   test("uses workflow-specific default output roots to avoid /report path collisions", () => {
@@ -42,7 +42,7 @@ describe("financial_political_backtest slice 7", () => {
         directory: temp,
         worktree: temp,
         abort: undefined,
-        metadata: () => {},
+        metadata: () => { },
         ask: async (input: { permission: string }) => {
           if (input.permission === "edit") throw new Error("edit denied")
         },
@@ -70,6 +70,46 @@ describe("financial_political_backtest slice 7", () => {
         .then(() => true)
         .catch(() => false)
       expect(historyExists).toBe(false)
+    } finally {
+      await fs.rm(temp, { recursive: true, force: true })
+    }
+  })
+
+  test("does not create output root when edit permission is denied", async () => {
+    const temp = await fs.mkdtemp(path.join(os.tmpdir(), "political-backtest-denied-create-"))
+    const outputRoot = path.join(temp, "reports", "TEST", "2025-01-01")
+
+    try {
+      const ctx = {
+        directory: temp,
+        worktree: temp,
+        abort: undefined,
+        metadata: () => { },
+        ask: async (input: { permission: string }) => {
+          if (input.permission === "edit") throw new Error("edit denied")
+        },
+      } as any
+
+      await expect(
+        FinancialPoliticalBacktestInternal.writeArtifacts({
+          ctx,
+          outputRoot,
+          report: "new report",
+          dashboard: "new dashboard",
+          assumptions: "{}",
+          events: "[]",
+          windowReturns: "[]",
+          benchmarkReturns: "[]",
+          aggregate: "[]",
+          comparison: "{}",
+        }),
+      ).rejects.toThrow("edit denied")
+
+      const outputRootExists = await fs
+        .stat(outputRoot)
+        .then(() => true)
+        .catch(() => false)
+      expect(outputRootExists).toBe(false)
     } finally {
       await fs.rm(temp, { recursive: true, force: true })
     }

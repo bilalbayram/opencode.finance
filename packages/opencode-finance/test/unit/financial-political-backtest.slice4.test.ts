@@ -8,7 +8,7 @@ import {
   type BacktestRunSnapshot,
   type AggregateWindow,
 } from "../../src/finance/political-backtest"
-import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial_political_backtest"
+import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial-political-backtest"
 
 function aggregate(input: Partial<AggregateWindow>): AggregateWindow {
   return {

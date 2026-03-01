@@ -1,6 +1,6 @@
 import z from "zod"
 import { Tool } from "./tool"
-import DESCRIPTION from "./financial_search.txt"
+import DESCRIPTION from "./financial-search.txt"
 import { financialSearch } from "../finance/orchestrator"
 import { parseFinanceTicker } from "../finance/parser"
 

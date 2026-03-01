@@ -1,15 +1,11 @@
 import path from "path"
 import type { Tool } from "./tool"
+import { projectRoot } from "./_shared/project-root"
 
 type Kind = "file" | "directory"
-
 type Options = {
   bypass?: boolean
   kind?: Kind
-}
-
-function projectWorktree(context: Pick<Tool.Context, "directory" | "worktree">) {
-  return context.worktree === "/" ? context.directory : context.worktree
 }
 
 export async function assertExternalDirectory(ctx: Tool.Context, target?: string, options?: Options) {
@@ -17,7 +13,7 @@ export async function assertExternalDirectory(ctx: Tool.Context, target?: string
 
   if (options?.bypass) return
 
-  const worktree = projectWorktree(ctx)
+  const worktree = projectRoot(ctx)
   const absolute = path.resolve(target)
   const relative = path.relative(worktree, absolute)
 

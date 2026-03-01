@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ReportPdfInternal } from "../../src/tool/report_pdf"
+import { ReportPdfInternal } from "../../src/tool/pdf"
 
 const VALID_REPORT = `# Political Event Backtest: AAA
 

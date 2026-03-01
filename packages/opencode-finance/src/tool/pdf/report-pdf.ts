@@ -1,10 +1,11 @@
 import path from "path"
 import z from "zod"
 import { PDFDocument, PDFName, PDFString, StandardFonts, rgb } from "pdf-lib"
-import { Tool } from "./tool"
-import DESCRIPTION from "./report_pdf.txt"
-import { assertExternalDirectory } from "./external-directory"
-import { financialSearch } from "../finance/orchestrator"
+import { Tool } from "../tool"
+import DESCRIPTION from "../report_pdf.txt"
+import { assertExternalDirectory } from "../external-directory"
+import { projectRoot } from "../_shared"
+import { financialSearch } from "../../finance/orchestrator"
 
 const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
@@ -204,10 +205,6 @@ type Row =
       rows: string[][]
     }
 
-function projectWorktree(context: Pick<Tool.Context, "directory" | "worktree">) {
-  return context.worktree === "/" ? context.directory : context.worktree
-}
-
 export const ReportPdfTool = Tool.define("report_pdf", {
   description: DESCRIPTION,
   parameters,
@@ -217,7 +214,7 @@ export const ReportPdfTool = Tool.define("report_pdf", {
     const root = path.isAbsolute(params.outputRoot)
       ? path.normalize(params.outputRoot)
       : path.resolve(ctx.directory, params.outputRoot)
-    const worktree = projectWorktree(ctx)
+    const worktree = projectRoot(ctx)
 
     await assertExternalDirectory(ctx, root, { kind: "directory" })
 

@@ -2,7 +2,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { describe, expect, test } from "bun:test"
-import { ReportPdfInternal, ReportPdfTool } from "./report_pdf"
+import { ReportPdfInternal, ReportPdfTool } from "./pdf"
 
 const COVER = {
   title: "AAPL Research Report",
@@ -93,8 +93,8 @@ function toolContext(worktree: string) {
     directory: worktree,
     worktree,
     abort: new AbortController().signal,
-    metadata() {},
-    async ask() {},
+    metadata() { },
+    async ask() { },
   } as any
 }
 

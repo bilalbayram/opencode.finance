@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { runPoliticalEventStudyCore, type PoliticalEvent, type PriceBar } from "../../src/finance/political-backtest"
-import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial_political_backtest"
+import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial-political-backtest"
 
 describe("financial_political_backtest slice 1", () => {
   test("computes a strict ticker tracer-bullet run against SPY", () => {

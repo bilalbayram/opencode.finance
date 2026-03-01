@@ -1,6 +1,6 @@
 import z from "zod"
 import { Tool } from "./tool"
-import DESCRIPTION from "./portfolio_report.txt"
+import DESCRIPTION from "./portfolio-report.txt"
 import { listPortfolio } from "../finance/portfolio"
 import { financialSearch } from "../finance/orchestrator"
 import { createEmptyFinanceData, normalizeErrorText } from "../finance/parser"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import z from "zod"
-import { ReportGovernmentTradingTool } from "./report_government_trading"
+import { ReportGovernmentTradingTool } from "./report-government-trading"
 
 describe("ReportGovernmentTradingTool", () => {
   it("init returns a zod object schema for parameters", async () => {

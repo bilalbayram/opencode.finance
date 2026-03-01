@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { EventStudyError, normalizePoliticalEvents } from "../../src/finance/political-backtest"
-import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial_political_backtest"
+import { FinancialPoliticalBacktestInternal } from "../../src/tool/financial-political-backtest"
 
 describe("financial_political_backtest slice 8", () => {
   test("generates stable event ids for equivalent rows regardless of row ordering", () => {

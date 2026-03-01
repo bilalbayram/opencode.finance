@@ -5,14 +5,14 @@ import { type Plugin, tool as pluginTool, type Hooks } from "@opencode-ai/plugin
 import { FINANCE_AUTH_PROVIDER, type FinanceAuthProviderID } from "./finance/auth-provider"
 import { resolveProviderApiKey } from "./finance/credentials"
 import { FINANCE_SLASH_COMMANDS } from "./command/finance"
-import { FinancialSearchTool } from "./tool/financial_search"
+import { FinancialSearchTool } from "./tool/financial-search"
 import { PortfolioTool } from "./tool/portfolio"
-import { PortfolioReportTool } from "./tool/portfolio_report"
-import { ReportInsidersTool } from "./tool/report_insiders"
-import { ReportGovernmentTradingTool } from "./tool/report_government_trading"
-import { ReportDarkpoolAnomalyTool } from "./tool/report_darkpool_anomaly"
-import { FinancialPoliticalBacktestTool } from "./tool/financial_political_backtest"
-import { ReportPdfTool } from "./tool/report_pdf"
+import { PortfolioReportTool } from "./tool/portfolio-report"
+import { ReportInsidersTool } from "./tool/report-insiders"
+import { ReportGovernmentTradingTool } from "./tool/report-government-trading"
+import { ReportDarkpoolAnomalyTool } from "./tool/report-darkpool"
+import { FinancialPoliticalBacktestTool } from "./tool/financial-political-backtest"
+import { ReportPdfTool } from "./tool/pdf"
 import { Env } from "./env"
 import PROMPT_FINANCE from "./prompt/finance.txt"
 
@@ -101,14 +101,14 @@ async function ensureSkill(context: { directory: string; worktree: string }) {
   const gist = (Env.get(REPORT_SKILL_GIST_ENV) ?? "").trim()
   const content = gist
     ? await fetch(gist).then(async (response) => {
-        if (!response.ok) throw new Error(`failed to fetch ${REPORT_SKILL_GIST_ENV} (${response.status})`)
-        return response.text()
-      })
+      if (!response.ok) throw new Error(`failed to fetch ${REPORT_SKILL_GIST_ENV} (${response.status})`)
+      return response.text()
+    })
     : await Bun.file(BUNDLED_SKILL)
-        .text()
-        .catch(() => {
-          throw new Error(`missing bundled skill: ${BUNDLED_SKILL}`)
-        })
+      .text()
+      .catch(() => {
+        throw new Error(`missing bundled skill: ${BUNDLED_SKILL}`)
+      })
 
   if (!content.trim()) throw new Error(`empty skill content for ${REPORT_SKILL}`)
   await fs.mkdir(path.dirname(target), { recursive: true })
