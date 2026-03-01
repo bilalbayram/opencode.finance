@@ -596,13 +596,11 @@ def main():
     config = load_json_object(config_target)
 
     plugin = ensure_string_list(config, "plugin")
-    legacy_plugins = ensure_string_list(config, "plugins")
-    merged_plugins = uniq(plugin + legacy_plugins)
+    merged_plugins = uniq(plugin)
     if plugin_id not in merged_plugins:
         merged_plugins.append(plugin_id)
 
     next_config = dict(config)
-    next_config.pop("plugins", None)
     next_config["plugin"] = merged_plugins
     if "$schema" not in next_config:
         next_config["$schema"] = schema_url

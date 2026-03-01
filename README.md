@@ -35,12 +35,6 @@ If you need manual setup, add the plugin package in your OpenCode config:
 
 OpenCode installs npm plugins automatically on startup.
 
-```bash
-bun run --cwd packages/opencode-finance migrate
-```
-
-It migrates auth credentials, portfolio holdings, and the `finance-comprehensive-report` skill.
-
 ## Development
 
 ```bash
