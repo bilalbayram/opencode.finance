@@ -78,6 +78,7 @@ workflow_version: 4
   - market intelligence
   - scenario valuation
   - directional conviction score and monitoring triggers
+  - `## Sources` (IEEE-format bibliography, must be the final section in `report.md`)
 - Ensure `report.md` includes explicit metadata lines:
   - `Sector: <value>`
   - `Headquarters: <value>`
@@ -109,9 +110,12 @@ workflow_version: 4
   - `uncertainty_flags`
 
 ## Data and Citation Rules
+- Use IEEE-style numbered citations: place `[N]` markers in-text for each factual claim. Collect all references in a final `## Sources` section at the end of `report.md`.
+- Each entry in `## Sources` must follow this format:
+  `[N] Publisher/Domain Label, "page or dataset title," URL. Retrieved YYYY-MM-DD.`
+- The `## Sources` section must be the **last** section in `report.md`. No analytical content may appear after it.
 - Use `financial_search` as the primary source for finance data, with `coverage: "comprehensive"` for numeric claims.
 - Use Exa (`websearch`) only for qualitative market and catalyst context, never for numeric financial metrics.
-- Include publisher/domain `source`, canonical URL, and retrieval `timestamp` for every factual claim.
 - Never use generic source labels (`websearch`, `exa`, `search`, `internet`) in output artifacts.
 - If tool outputs are incomplete or errors are present:
   - mark unresolved fields as `unknown`

@@ -183,27 +183,27 @@ type PoliticalBacktestCoverData = {
 
 type Row =
   | {
-      kind: "blank"
-    }
+    kind: "blank"
+  }
   | {
-      kind: "heading"
-      text: string
-      size: number
-    }
+    kind: "heading"
+    text: string
+    size: number
+  }
   | {
-      kind: "text"
-      text: string
-    }
+    kind: "text"
+    text: string
+  }
   | {
-      kind: "bullet"
-      text: string
-      marker: string
-    }
+    kind: "bullet"
+    text: string
+    marker: string
+  }
   | {
-      kind: "table"
-      head: string[]
-      rows: string[][]
-    }
+    kind: "table"
+    head: string[]
+    rows: string[][]
+  }
 
 export const ReportPdfTool = Tool.define("report_pdf", {
   description: DESCRIPTION,
@@ -341,30 +341,34 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
       buildCoverData: ({ artifacts, hints }) => governmentTradingCoverData(artifacts.report, artifacts.dashboard, hints),
       enrichCover: async ({ info }) => info,
       renderCover: ({ pdf, info, font, icon }) => renderReportCover(pdf, info, font, icon),
-      sectionPlan: (artifacts) => [
-        {
-          title: "Dashboard",
-          content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
-        },
-        {
-          title: "Full Report",
-          content: artifacts.report,
-        },
-        {
-          title: "Assumptions",
-          content: assumptionsMarkdown(artifacts.assumptions),
-        },
-        {
-          title: "Delta Events",
-          content: jsonArtifactContent(artifacts.deltaEventsJson, "delta-events.json"),
-          style: { mono: true, size: 9, line: 12 },
-        },
-        {
-          title: "Normalized Events",
-          content: jsonArtifactContent(artifacts.normalizedEventsJson, "normalized-events.json"),
-          style: { mono: true, size: 9, line: 12 },
-        },
-      ],
+      sectionPlan: (artifacts) => {
+        const { body, sources } = extractSourcesSection(artifacts.report)
+        return [
+          {
+            title: "Dashboard",
+            content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
+          },
+          {
+            title: "Full Report",
+            content: body,
+          },
+          {
+            title: "Assumptions",
+            content: assumptionsMarkdown(artifacts.assumptions),
+          },
+          {
+            title: "Delta Events",
+            content: jsonArtifactContent(artifacts.deltaEventsJson, "delta-events.json"),
+            style: { mono: true, size: 9, line: 12 },
+          },
+          {
+            title: "Normalized Events",
+            content: jsonArtifactContent(artifacts.normalizedEventsJson, "normalized-events.json"),
+            style: { mono: true, size: 9, line: 12 },
+          },
+          ...(sources ? [{ title: "Sources", content: sources }] : []),
+        ]
+      },
       qualityGate: ({ artifacts }) =>
         qualityIssuesGovernmentTrading({
           report: artifacts.report,
@@ -382,24 +386,28 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
       buildCoverData: ({ artifacts, hints }) => darkpoolCoverData(artifacts.report, artifacts.dashboard, hints),
       enrichCover: async ({ info }) => info,
       renderCover: ({ pdf, info, font, icon, artifacts }) => renderDarkpoolCover(pdf, info, font, icon, artifacts),
-      sectionPlan: (artifacts) => [
-        {
-          title: "Dashboard",
-          content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
-        },
-        {
-          title: "Full Report",
-          content: artifacts.report,
-        },
-        {
-          title: "Evidence",
-          content: textOrUnknown(artifacts.evidenceMarkdown, "evidence.md"),
-        },
-        {
-          title: "Assumptions",
-          content: assumptionsMarkdown(artifacts.assumptions),
-        },
-      ],
+      sectionPlan: (artifacts) => {
+        const { body, sources } = extractSourcesSection(artifacts.report)
+        return [
+          {
+            title: "Dashboard",
+            content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
+          },
+          {
+            title: "Full Report",
+            content: body,
+          },
+          {
+            title: "Evidence",
+            content: textOrUnknown(artifacts.evidenceMarkdown, "evidence.md"),
+          },
+          {
+            title: "Assumptions",
+            content: assumptionsMarkdown(artifacts.assumptions),
+          },
+          ...(sources ? [{ title: "Sources", content: sources }] : []),
+        ]
+      },
       qualityGate: ({ artifacts }) =>
         qualityIssuesDarkpool({
           report: artifacts.report,
@@ -416,28 +424,32 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
       buildCoverData: ({ artifacts, hints }) => politicalBacktestCoverData(artifacts, hints),
       enrichCover: async ({ info }) => info,
       renderCover: ({ pdf, info, font, icon }) => renderReportCover(pdf, info, font, icon),
-      sectionPlan: (artifacts) => [
-        {
-          title: "Dashboard",
-          content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
-        },
-        {
-          title: "Full Report",
-          content: artifacts.report,
-        },
-        {
-          title: "Aggregate Results",
-          content: aggregateResultsMarkdown(artifacts.aggregateJson),
-        },
-        {
-          title: "Longitudinal Comparison",
-          content: comparisonMarkdown(artifacts.comparisonJson),
-        },
-        {
-          title: "Assumptions",
-          content: assumptionsMarkdown(artifacts.assumptions),
-        },
-      ],
+      sectionPlan: (artifacts) => {
+        const { body, sources } = extractSourcesSection(artifacts.report)
+        return [
+          {
+            title: "Dashboard",
+            content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
+          },
+          {
+            title: "Full Report",
+            content: body,
+          },
+          {
+            title: "Aggregate Results",
+            content: aggregateResultsMarkdown(artifacts.aggregateJson),
+          },
+          {
+            title: "Longitudinal Comparison",
+            content: comparisonMarkdown(artifacts.comparisonJson),
+          },
+          {
+            title: "Assumptions",
+            content: assumptionsMarkdown(artifacts.assumptions),
+          },
+          ...(sources ? [{ title: "Sources", content: sources }] : []),
+        ]
+      },
       qualityGate: ({ artifacts }) =>
         qualityIssuesPoliticalBacktest({
           report: artifacts.report,
@@ -453,20 +465,24 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
     buildCoverData: ({ artifacts, hints }) => reportCoverData(artifacts.report, artifacts.dashboard, hints),
     enrichCover: async ({ info, ctx }) => enrichCover(info, ctx),
     renderCover: ({ pdf, info, font, icon }) => renderReportCover(pdf, info, font, icon),
-    sectionPlan: (artifacts) => [
-      {
-        title: "Full Report",
-        content: artifacts.report,
-      },
-      {
-        title: "Dashboard",
-        content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
-      },
-      {
-        title: "Assumptions",
-        content: assumptionsMarkdown(artifacts.assumptions),
-      },
-    ],
+    sectionPlan: (artifacts) => {
+      const { body, sources } = extractSourcesSection(artifacts.report)
+      return [
+        {
+          title: "Full Report",
+          content: body,
+        },
+        {
+          title: "Dashboard",
+          content: textOrUnknown(artifacts.dashboard, "dashboard.md"),
+        },
+        {
+          title: "Assumptions",
+          content: assumptionsMarkdown(artifacts.assumptions),
+        },
+        ...(sources ? [{ title: "Sources", content: sources }] : []),
+      ]
+    },
     qualityGate: ({ info, artifacts }) =>
       qualityIssuesReport(info, artifacts.report, artifacts.dashboard, artifacts.assumptions),
   }
@@ -833,15 +849,15 @@ function extractPoliticalBacktestCoverData(input: {
   const longitudinalHighlights = comparison
     ? comparison.firstRun
       ? [
-          "First run baseline: none.",
-          `Events in scope: ${formatNumber(comparison.eventCurrent, 0)}.`,
-          `New events: ${formatNumber(comparison.newEvents, 0)}.`,
-        ]
+        "First run baseline: none.",
+        `Events in scope: ${formatNumber(comparison.eventCurrent, 0)}.`,
+        `New events: ${formatNumber(comparison.newEvents, 0)}.`,
+      ]
       : [
-          `Baseline: ${comparison.baselineGeneratedAt} (${comparison.baselineOutputRoot}).`,
-          `New events: ${formatNumber(comparison.newEvents, 0)}, removed events: ${formatNumber(comparison.removedEvents, 0)}.`,
-          `Conclusion changes: ${formatNumber(comparison.conclusionChanges, 0)}.`,
-        ]
+        `Baseline: ${comparison.baselineGeneratedAt} (${comparison.baselineOutputRoot}).`,
+        `New events: ${formatNumber(comparison.newEvents, 0)}, removed events: ${formatNumber(comparison.removedEvents, 0)}.`,
+        `Conclusion changes: ${formatNumber(comparison.conclusionChanges, 0)}.`,
+      ]
     : ["Longitudinal comparison payload could not be parsed."]
 
   return {
@@ -983,26 +999,26 @@ function comparisonMarkdown(input: string | undefined) {
 
   const driftRows = Array.isArray(parsed.aggregate_drift)
     ? parsed.aggregate_drift
-        .map((item) => asRecord(item))
-        .flatMap((row) => {
-          if (!row) return []
-          const anchorKind = asOptionalText(row.anchor_kind)
-          const benchmarkSymbol = asOptionalText(row.benchmark_symbol)
-          const windowSessions = toFiniteNumber(row.window_sessions)
-          const sampleDelta = toFiniteNumber(row.sample_delta)
-          const hitRateDelta = toFiniteNumber(row.hit_rate_delta)
-          const meanExcessDelta = toFiniteNumber(row.mean_excess_delta)
-          if (!anchorKind || !benchmarkSymbol) return []
-          if (
-            !Number.isFinite(windowSessions) ||
-            !Number.isFinite(sampleDelta) ||
-            !Number.isFinite(hitRateDelta) ||
-            !Number.isFinite(meanExcessDelta)
-          ) {
-            return []
-          }
-          return [{ anchorKind, benchmarkSymbol, windowSessions, sampleDelta, hitRateDelta, meanExcessDelta }]
-        })
+      .map((item) => asRecord(item))
+      .flatMap((row) => {
+        if (!row) return []
+        const anchorKind = asOptionalText(row.anchor_kind)
+        const benchmarkSymbol = asOptionalText(row.benchmark_symbol)
+        const windowSessions = toFiniteNumber(row.window_sessions)
+        const sampleDelta = toFiniteNumber(row.sample_delta)
+        const hitRateDelta = toFiniteNumber(row.hit_rate_delta)
+        const meanExcessDelta = toFiniteNumber(row.mean_excess_delta)
+        if (!anchorKind || !benchmarkSymbol) return []
+        if (
+          !Number.isFinite(windowSessions) ||
+          !Number.isFinite(sampleDelta) ||
+          !Number.isFinite(hitRateDelta) ||
+          !Number.isFinite(meanExcessDelta)
+        ) {
+          return []
+        }
+        return [{ anchorKind, benchmarkSymbol, windowSessions, sampleDelta, hitRateDelta, meanExcessDelta }]
+      })
     : []
   if (driftRows.length) {
     lines.push("")
@@ -2169,14 +2185,14 @@ function drawDarkpoolTopTable(
   const fillRows = rows.length
     ? rows
     : [
-        {
-          ticker: "none",
-          severity: "none",
-          direction: "none",
-          absZ: 0,
-          state: "none",
-        },
-      ]
+      {
+        ticker: "none",
+        severity: "none",
+        direction: "none",
+        absZ: 0,
+        state: "none",
+      },
+    ]
 
   const drawRow = (cells: string[], y: number, header = false) => {
     let cursor = x
@@ -2543,7 +2559,7 @@ function section(pdf: PDFDocument, font: FontSet, info: Cover, title: string, in
             return Math.max(1, lines.length)
           }),
         ) *
-          textLine +
+        textLine +
         pad * 2
       const draw = (cells: string[], head: boolean) => {
         const fill = head ? THEME.card : THEME.paper
@@ -2839,7 +2855,42 @@ function cleanInline(input: string) {
     .replace(/`{1,3}([^`]+)`{1,3}/g, "$1")
     .replace(/\*\*(.*?)\*\*/g, "$1")
     .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,:;!?]|$)/g, "$1$2")
-    .replace(/^>\s?/, "")
+    .replace(/^\u003e\s?/, "")
+}
+
+function extractSourcesSection(input: string): { body: string; sources: string } {
+  const match = input.match(/^(#{1,2})\s+Sources\s*$/im)
+  if (!match) return { body: input, sources: "" }
+
+  const lines = input.split("\n")
+  const headingLevel = match[1].length
+  let startIndex = -1
+  for (let i = 0; i < lines.length; i++) {
+    const heading = lines[i].match(/^(#{1,2})\s+Sources\s*$/i)
+    if (heading && heading[1].length === headingLevel) {
+      startIndex = i
+      break
+    }
+  }
+
+  if (startIndex === -1) return { body: input, sources: "" }
+
+  const headingPrefix = "#".repeat(headingLevel)
+  const headingPattern = new RegExp(`^#{1,${headingLevel}}\\s+\\S`)
+  let endIndex = lines.length
+  for (let i = startIndex + 1; i < lines.length; i++) {
+    if (headingPattern.test(lines[i]) && !lines[i].match(/^#{1,2}\s+Sources\s*$/i)) {
+      endIndex = i
+      break
+    }
+  }
+
+  const bodyLines = [...lines.slice(0, startIndex), ...lines.slice(endIndex)]
+  const sourcesLines = lines.slice(startIndex + 1, endIndex)
+  const body = bodyLines.join("\n").replace(/\n{3,}/g, "\n\n").trim()
+  const sources = sourcesLines.join("\n").trim()
+
+  return { body, sources }
 }
 
 function wrap(input: string, width: number, font: Font, size: number) {
@@ -3055,6 +3106,7 @@ export const ReportPdfInternal = {
   politicalBacktestCoverData,
   extractDarkpoolCoverData,
   extractPoliticalBacktestCoverData,
+  extractSourcesSection,
   defaultRootHints,
   directionalScore,
   listUnder,
