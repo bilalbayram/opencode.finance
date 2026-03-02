@@ -79,12 +79,12 @@ workflow_version: 4
   - scenario valuation
   - directional conviction score and monitoring triggers
   - `## Sources` (IEEE-format bibliography, must be the final section in `report.md`)
-- Ensure `report.md` includes explicit metadata lines:
-  - `Sector: <value>`
-  - `Headquarters: <value>`
+- Ensure `report.md` includes explicit metadata lines at the **top of the file** (before the first analytical section). These lines are extracted for the PDF cover page and must not be repeated inline in analytical sections:
+  - `Sector: <value>` — use human-readable labels (e.g. "Automotive", "Technology"), not raw API format like `CONSUMER CYCLICAL`
+  - `Headquarters: <value>` — use short format `City, State, Country` (e.g. "Austin, TX, USA"), not full street address
   - `Website: <value>`
   - `Icon URL: <value>`
-- Ensure `report.md` includes explicit driver headings:
+- Ensure `report.md` includes explicit driver headings with concise, human-readable bullet points (not raw inference sentences):
   - `Top Positive Drivers`
   - `Top Negative Drivers`
 - Ensure insider analysis uses `financial_search` with `intent: "insider"` and `coverage: "comprehensive"` and references returned `ownershipChange` when available.
@@ -114,6 +114,7 @@ workflow_version: 4
 - Each entry in `## Sources` must follow this format:
   `[N] Publisher/Domain Label, "page or dataset title," URL. Retrieved YYYY-MM-DD.`
 - The `## Sources` section must be the **last** section in `report.md`. No analytical content may appear after it.
+- **Never** use alternative section names like `Source Register`, `Reference List`, or alternative marker formats like `S1`, `Sn`, `(S1)`. Only `## Sources` with `[N]` markers.
 - Use `financial_search` as the primary source for finance data, with `coverage: "comprehensive"` for numeric claims.
 - Use Exa (`websearch`) only for qualitative market and catalyst context, never for numeric financial metrics.
 - Never use generic source labels (`websearch`, `exa`, `search`, `internet`) in output artifacts.

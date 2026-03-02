@@ -350,7 +350,7 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
           },
           {
             title: "Full Report",
-            content: body,
+            content: stripMetadataLines(body),
           },
           {
             title: "Assumptions",
@@ -395,7 +395,7 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
           },
           {
             title: "Full Report",
-            content: body,
+            content: stripMetadataLines(body),
           },
           {
             title: "Evidence",
@@ -433,7 +433,7 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
           },
           {
             title: "Full Report",
-            content: body,
+            content: stripMetadataLines(body),
           },
           {
             title: "Aggregate Results",
@@ -470,7 +470,7 @@ function getPdfProfile(subcommand: PdfSubcommand): PdfProfile {
       return [
         {
           title: "Full Report",
-          content: body,
+          content: stripMetadataLines(body),
         },
         {
           title: "Dashboard",
@@ -585,15 +585,16 @@ function reportCoverData(report: string, dashboard: string | undefined, hints: R
       ?.replace(/^#\s+/, "")
       .trim() ?? `${hints.ticker} Research Report`
   const tickerLine = field(report, "Ticker")
-  const dateLine = field(report, "Report Date")
+  const dateLine = field(report, "Report Date") ?? field(report, "Generated on")
   const ticker = tickerLabel(tickerLine ?? hints.ticker)
-  const date = dateLine ?? hints.date
-  const sector = field(report, "Sector") ?? tableRow(report, "Sector")?.[1] ?? tableRow(dashboard, "Sector")?.[1] ?? "unknown"
-  const headquarters =
+  const date = formatDate(dateLine ?? hints.date)
+  const sector = titleCase(field(report, "Sector") ?? tableRow(report, "Sector")?.[1] ?? tableRow(dashboard, "Sector")?.[1] ?? "unknown")
+  const headquarters = shortenHeadquarters(
     field(report, "Headquarters") ??
     tableRow(report, "Headquarters")?.[1] ??
     tableRow(dashboard, "Headquarters")?.[1] ??
     "unknown"
+  )
   const website = field(report, "Website") ?? field(report, "Company Website") ?? tableRow(report, "Website")?.[1] ?? ""
   const icon = iconUrl(field(report, "Icon URL") ?? field(report, "Icon") ?? tableRow(report, "Icon URL")?.[1], website)
   const score = directionalScore(report)
@@ -614,20 +615,19 @@ function reportCoverData(report: string, dashboard: string | undefined, hints: R
   const rangeRow = tableRow(dashboard, "52W Range")
   const analyst = tableRow(dashboard, "Analyst Consensus")
   const stockValue = metricValue(dashboard, [/^stock price$/i]) ?? stock?.[1] ?? "unknown"
-  const dailyValue =
-    metricValue(dashboard, [/^daily change$/i]) ??
-    daily?.[1] ??
-    metricValue(dashboard, [/^daily change percent$/i]) ??
-    dailyPercent?.[1] ??
-    "unknown"
-  const ytdValue = metricValue(dashboard, [/^ytd return$/i]) ?? ytd?.[1] ?? "unknown"
+  const dailyPercentValue = metricValue(dashboard, [/^daily change percent$/i]) ?? dailyPercent?.[1]
+  const dailyAbsValue = metricValue(dashboard, [/^daily change$/i]) ?? daily?.[1]
+  const dailyValue = dailyPercentValue ?? dailyAbsValue ?? "unknown"
+  const ytdRaw = metricValue(dashboard, [/^ytd return$/i]) ?? ytd?.[1] ?? "unknown"
+  const ytdValue = formatPercent(ytdRaw)
   const highValue = metricValue(dashboard, [/^52w high$/i]) ?? high?.[1]
   const lowValue = metricValue(dashboard, [/^52w low$/i]) ?? low?.[1]
   const range =
     metricValue(dashboard, [/^52w range$/i]) ??
     rangeRow?.[1] ??
     (highValue && lowValue ? `${lowValue} to ${highValue}` : "unknown")
-  const analystValue = metricValue(dashboard, [/^analyst consensus$/i]) ?? analyst?.[1] ?? "unknown"
+  const analystRaw = metricValue(dashboard, [/^analyst consensus$/i]) ?? analyst?.[1] ?? "unknown"
+  const analystValue = formatAnalystConsensus(analystRaw)
   const metrics = [
     metric("Stock Price", stockValue),
     metric("Daily Change", dailyValue),
@@ -2858,15 +2858,17 @@ function cleanInline(input: string) {
     .replace(/^\u003e\s?/, "")
 }
 
+const SOURCES_HEADING_PATTERN = /^(#{1,2})\s+(?:Sources|Source Register|References|Bibliography)\s*$/i
+
 function extractSourcesSection(input: string): { body: string; sources: string } {
-  const match = input.match(/^(#{1,2})\s+Sources\s*$/im)
+  const match = input.match(new RegExp(SOURCES_HEADING_PATTERN.source, "im"))
   if (!match) return { body: input, sources: "" }
 
   const lines = input.split("\n")
   const headingLevel = match[1].length
   let startIndex = -1
   for (let i = 0; i < lines.length; i++) {
-    const heading = lines[i].match(/^(#{1,2})\s+Sources\s*$/i)
+    const heading = lines[i].match(SOURCES_HEADING_PATTERN)
     if (heading && heading[1].length === headingLevel) {
       startIndex = i
       break
@@ -2875,11 +2877,10 @@ function extractSourcesSection(input: string): { body: string; sources: string }
 
   if (startIndex === -1) return { body: input, sources: "" }
 
-  const headingPrefix = "#".repeat(headingLevel)
   const headingPattern = new RegExp(`^#{1,${headingLevel}}\\s+\\S`)
   let endIndex = lines.length
   for (let i = startIndex + 1; i < lines.length; i++) {
-    if (headingPattern.test(lines[i]) && !lines[i].match(/^#{1,2}\s+Sources\s*$/i)) {
+    if (headingPattern.test(lines[i]) && !SOURCES_HEADING_PATTERN.test(lines[i])) {
       endIndex = i
       break
     }
@@ -2891,6 +2892,82 @@ function extractSourcesSection(input: string): { body: string; sources: string }
   const sources = sourcesLines.join("\n").trim()
 
   return { body, sources }
+}
+
+const METADATA_LINE_PATTERNS = [
+  /^Sector:\s/i,
+  /^Headquarters:\s/i,
+  /^Website:\s/i,
+  /^Icon URL:\s/i,
+  /^Icon:\s/i,
+  /^Company Website:\s/i,
+  /^Generated on:\s/i,
+  /^Ticker:\s/i,
+  /^Report Date:\s/i,
+]
+
+function stripMetadataLines(input: string): string {
+  return input
+    .split("\n")
+    .filter((line) => !METADATA_LINE_PATTERNS.some((pattern) => pattern.test(line.trim())))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+function titleCase(input: string): string {
+  if (input === "unknown") return input
+  return input
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ")
+}
+
+function shortenHeadquarters(input: string): string {
+  if (input === "unknown") return input
+  const parts = input.split(",").map((part) => part.trim())
+  if (parts.length <= 3) return input
+  const city = parts.at(-4) ?? parts[0]
+  const state = parts.at(-3) ?? ""
+  const country = parts.at(-2) ?? ""
+  return [city, state, country].filter(Boolean).join(", ")
+}
+
+function formatDate(input: string): string {
+  const iso = input.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (iso) return iso[1]
+  return input
+}
+
+function formatPercent(input: string): string {
+  if (input === "unknown") return input
+  const match = input.match(/([+-]?\d+(?:\.\d+)?)\s*%/)
+  if (!match) return input
+  const value = parseFloat(match[1])
+  if (!Number.isFinite(value)) return input
+  const sign = value > 0 ? "+" : ""
+  return `${sign}${value.toFixed(2)}%`
+}
+
+function formatAnalystConsensus(input: string): string {
+  if (input === "unknown") return input
+  const counts: Record<string, number> = {}
+  const pattern = /(?:strong\s+)?(?:buy|sell|hold)\s+(\d+)/gi
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(input)) !== null) {
+    const label = match[0].replace(/\s+\d+$/, "").toLowerCase()
+    counts[label] = parseInt(match[1], 10)
+  }
+  const keys = Object.keys(counts)
+  if (keys.length === 0) return input
+  const buy = (counts["strong buy"] ?? 0) + (counts["buy"] ?? 0)
+  const hold = counts["hold"] ?? 0
+  const sell = (counts["sell"] ?? 0) + (counts["strong sell"] ?? 0)
+  const total = buy + hold + sell
+  if (total === 0) return input
+  const dominant = buy >= hold && buy >= sell ? "Buy-leaning" : sell >= hold && sell >= buy ? "Sell-leaning" : "Hold-leaning"
+  return `${dominant} (${buy}B / ${hold}H / ${sell}S)`
 }
 
 function wrap(input: string, width: number, font: Font, size: number) {
@@ -3107,6 +3184,12 @@ export const ReportPdfInternal = {
   extractDarkpoolCoverData,
   extractPoliticalBacktestCoverData,
   extractSourcesSection,
+  stripMetadataLines,
+  titleCase,
+  shortenHeadquarters,
+  formatDate,
+  formatPercent,
+  formatAnalystConsensus,
   defaultRootHints,
   directionalScore,
   listUnder,
