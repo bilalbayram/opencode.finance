@@ -88,6 +88,8 @@ workflow_version: 4
   - `Top Positive Drivers`
   - `Top Negative Drivers`
 - Ensure insider analysis uses `financial_search` with `intent: "insider"` and `coverage: "comprehensive"` and references returned `ownershipChange` when available.
+- Ensure `dashboard.md` KPI tables use exactly these columns:
+  `| KPI | Value | Period | Source | Source URL | Retrieval timestamp |`
 - Ensure KPI rows include separate entries for:
   - Stock price
   - Previous close
@@ -101,6 +103,13 @@ workflow_version: 4
   - Net income
   - Free cash flow
   - Debt-to-equity
+- Ensure KPI source labels and source URLs are coherent (for example, Yahoo chart label must use Yahoo chart URL).
+- **Dashboard table format** — every KPI table in `dashboard.md` **must** use this 6-column layout:
+  `| KPI | Value | Period | Source | Source URL | Retrieval timestamp |`
+  - `Source`: the publisher/domain label from the `financial_search` response `attribution[].publisher` or `source` field. Must be one of the recognized provider labels: `Alpha Vantage`, `Yahoo Finance` (or `yfinance`), `Finnhub`, `Financial Modeling Prep` (or `FMP`), `Polygon`, `SEC EDGAR`, `Quiver Quant`, `Quartr`.
+  - `Source URL`: the `attribution[].url` from the `financial_search` response. Must match the domain of the source label (e.g. Yahoo Finance → `finance.yahoo.com` or `query1.finance.yahoo.com`).
+  - `Retrieval timestamp`: the `timestamp` from the `financial_search` response, in ISO-8601 format (`YYYY-MM-DDTHH:MM:SS.sssZ`).
+  - **Never** leave Source, Source URL, or Retrieval timestamp empty for any numeric KPI row. These columns are required for PDF export quality gates.
 - Ensure KPI source labels and source URLs are coherent (for example, Yahoo chart label must use Yahoo chart URL).
 - Use period-aware metric labels in KPI/ledger rows (`TTM`, `FY`, or `Q`) based on `metricPeriods`; do not force `(TTM)` when period differs.
 - Ensure `assumptions.json` includes:
