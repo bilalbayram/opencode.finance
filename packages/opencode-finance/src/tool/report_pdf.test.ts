@@ -268,7 +268,7 @@ describe("report_pdf root hint parsing", () => {
 
 describe("ReportPdfTool execution", () => {
   test("generates PDF for government-trading artifacts", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "gov-pdf-subcommand-"))
+    const root = await fs.mkdtemp(path.join("/tmp", "gov-pdf-subcommand-"))
     try {
       await Promise.all([
         fs.writeFile(path.join(root, "report.md"), GOVERNMENT_ARTIFACTS.report, "utf8"),
